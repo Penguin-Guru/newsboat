@@ -6,6 +6,8 @@
 
 #include "exception.h"
 
+#include "utils.h"
+
 namespace rsspp {
 
 std::string RssParser::get_content(xmlNode* node)
@@ -64,11 +66,11 @@ std::string RssParser::get_prop(xmlNode* node,
 		xmlChar* value = nullptr;
 		if (ns.empty()) {
 			value = xmlGetProp(node,
-				reinterpret_cast<const xmlChar*>(prop.c_str()));
+					reinterpret_cast<const xmlChar*>(prop.c_str()));
 		} else {
 			value = xmlGetNsProp(node,
-				reinterpret_cast<const xmlChar*>(prop.c_str()),
-				reinterpret_cast<const xmlChar*>(ns.c_str()));
+					reinterpret_cast<const xmlChar*>(prop.c_str()),
+					reinterpret_cast<const xmlChar*>(ns.c_str()));
 		}
 		if (value) {
 			retval = reinterpret_cast<const char*>(value);
@@ -79,11 +81,6 @@ std::string RssParser::get_prop(xmlNode* node,
 }
 
 std::string RssParser::w3cdtf_to_rfc822(const std::string& w3cdtf)
-{
-	return __w3cdtf_to_rfc822(w3cdtf);
-}
-
-std::string RssParser::__w3cdtf_to_rfc822(const std::string& w3cdtf)
 {
 	if (w3cdtf.empty()) {
 		return "";
@@ -120,8 +117,9 @@ std::string RssParser::__w3cdtf_to_rfc822(const std::string& w3cdtf)
 			unsigned int hour, min;
 			if (sscanf(ptr + 1, "%02u:%02u", &hour, &min) == 2) {
 				offs = 60 * 60 * hour + 60 * min;
-				if (ptr[0] == '+')
+				if (ptr[0] == '+') {
 					offs = -offs;
+				}
 				stm.tm_gmtoff = offs;
 			}
 		} else if (ptr[0] == 'Z') {
@@ -133,26 +131,31 @@ std::string RssParser::__w3cdtf_to_rfc822(const std::string& w3cdtf)
 	// then the offset will be zeroed out, since that was manually added
 	// https://github.com/akrennmair/newsbeuter/issues/369
 	stm.tm_isdst = -1;
-	time_t gmttime = mktime(&stm) + offs;
-	char datebuf[256];
-	strftime(datebuf,
-		sizeof(datebuf),
-		"%a, %d %b %Y %H:%M:%S +0000",
-		localtime(&gmttime));
-	return datebuf;
+
+	const time_t local_time = mktime(&stm);
+	if (local_time == -1) {
+		return "";
+	}
+
+	const time_t gmttime = local_time + offs;
+	return newsboat::utils::mt_strf_localtime("%a, %d %b %Y %H:%M:%S +0000",
+			gmttime);
 }
 
 bool RssParser::node_is(xmlNode* node, const char* name, const char* ns_uri)
 {
-	if (!node || !name || !node->name)
+	if (!node || !name || !node->name) {
 		return false;
+	}
 
 	if (strcmp((const char*)node->name, name) == 0) {
-		if (!ns_uri && !node->ns)
+		if (!ns_uri && !node->ns) {
 			return true;
+		}
 		if (ns_uri && node->ns && node->ns->href &&
-			strcmp((const char*)node->ns->href, ns_uri) == 0)
+			strcmp((const char*)node->ns->href, ns_uri) == 0) {
 			return true;
+		}
 	}
 	return false;
 }

@@ -10,6 +10,7 @@
 #include "configcontainer.h"
 #include "controller.h"
 #include "filebrowserformaction.h"
+#include "dirbrowserformaction.h"
 #include "htmlrenderer.h"
 #include "keymap.h"
 #include "regexmanager.h"
@@ -72,11 +73,12 @@ public:
 
 	std::string run_filebrowser(const std::string& default_filename = "",
 		const std::string& dir = "");
+	std::string run_dirbrowser(const std::string& dir = "");
 	std::string select_tag();
 	std::string select_filter(
 		const std::vector<FilterNameExprPair>& filters);
 
-	void open_in_browser(const std::string& url);
+	int open_in_browser(const std::string& url);
 	void open_in_pager(const std::string& filename);
 
 	std::string get_filename_suggestion(const std::string& s);
@@ -113,8 +115,7 @@ public:
 	void set_cache(Cache* c);
 	void set_filters(FilterContainer* f);
 
-	std::vector<std::pair<unsigned int, std::string>>
-	get_formaction_names();
+	std::vector<std::pair<unsigned int, std::string>> get_formaction_names();
 
 	std::shared_ptr<FormAction> get_current_formaction();
 

@@ -54,8 +54,8 @@ public:
 	void cleanup_cache(std::vector<std::shared_ptr<RssFeed>>& feeds);
 	void do_vacuum();
 	std::vector<std::shared_ptr<RssItem>> search_for_items(
-		const std::string& querystr,
-		const std::string& feedurl);
+			const std::string& querystr,
+			const std::string& feedurl);
 	std::unordered_set<std::string> search_in_items(
 		const std::string& querystr,
 		const std::unordered_set<std::string>& guids);
@@ -68,7 +68,6 @@ public:
 	void update_lastmodified(const std::string& uri,
 		time_t t,
 		const std::string& etag);
-	unsigned int get_unread_count();
 	void mark_item_deleted(const std::string& guid, bool b);
 	void mark_feed_items_deleted(const std::string& feedurl);
 	void remove_old_deleted_items(RssFeed* feed);
@@ -92,8 +91,8 @@ private:
 		const std::string& arg,
 		Args... args);
 	template<typename T, typename... Args>
-	std::string
-	prepare_query(const std::string& format, const T& arg, Args... args);
+	std::string prepare_query(const std::string& format, const T& arg,
+		Args... args);
 
 	void run_sql(const std::string& query,
 		int (*callback)(void*, int, char**, char**) = nullptr,

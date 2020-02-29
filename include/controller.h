@@ -6,7 +6,6 @@
 #include "cache.h"
 #include "colormanager.h"
 #include "configcontainer.h"
-#include "configpaths.h"
 #include "feedcontainer.h"
 #include "filtercontainer.h"
 #include "fslock.h"
@@ -20,13 +19,15 @@
 
 namespace newsboat {
 
+class CliArgsParser;
+class ConfigPaths;
 class View;
 
 class CurlHandle;
 
 class Controller {
 public:
-	Controller();
+	Controller(ConfigPaths& configpaths);
 	~Controller();
 	void set_view(View* vv);
 	View* get_view()
@@ -36,8 +37,8 @@ public:
 	int run(const CliArgsParser& args);
 
 	std::vector<std::shared_ptr<RssItem>> search_for_items(
-		const std::string& query,
-		std::shared_ptr<RssFeed> feed);
+			const std::string& query,
+			std::shared_ptr<RssFeed> feed);
 
 	void update_feedlist();
 	void update_visible_feeds();
@@ -121,7 +122,7 @@ private:
 
 	std::unique_ptr<FsLock> fslock;
 
-	ConfigPaths configpaths;
+	ConfigPaths& configpaths;
 
 	std::unique_ptr<Reloader> reloader;
 

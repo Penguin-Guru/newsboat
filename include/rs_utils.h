@@ -5,10 +5,15 @@
 extern "C" {
 #endif
 
+struct FilterUrl {
+	char* filter;
+	char* url;
+};
+
 char* rs_replace_all(
-		const char* str,
-		const char* from,
-		const char* to);
+	const char* str,
+	const char* from,
+	const char* to);
 
 char* rs_consolidate_whitespace(const char* str);
 
@@ -32,6 +37,8 @@ bool rs_is_exec_url(const char* str);
 
 char* rs_censor_url(const char* str);
 
+char* rs_quote_for_stfl(const char* str);
+
 char* rs_trim(const char* str);
 
 char* rs_trim_end(const char* str);
@@ -50,6 +57,8 @@ char* rs_make_title(const char* str);
 
 char* rs_getcwd();
 
+int rs_strnaturalcmp(const char* a, const char* b);
+
 void rs_cstring_free(char* str);
 
 char* rs_get_default_browser();
@@ -62,19 +71,33 @@ size_t rs_strwidth(const char* str);
 
 size_t rs_strwidth_stfl(const char* str);
 
+char* rs_substr_with_width(const char* str, size_t max_width);
+
 char* rs_remove_soft_hyphens(const char* str);
 
 bool rs_is_valid_podcast_type(const char* mimetype);
 
 char* rs_get_command_output(const char* str);
 
+char* rs_get_basename(const char* str);
+
 void rs_run_command(const char* command, const char* param);
 
-char* rs_run_program(char* argv[], const char* input);
+char* rs_run_program(const char* argv[], const char* input);
 
 char* rs_program_version();
 
 unsigned int rs_newsboat_version_major();
+
+unsigned int rs_gentabs(const char* path);
+
+int rs_mkdir_parents(const char* path, const std::uint32_t mode);
+
+char* rs_strip_comments(const char* line);
+
+FilterUrl rs_extract_filter(const char* line);
+
+char* rs_get_string(const char* line);
 
 class RustString {
 private:
@@ -83,20 +106,8 @@ private:
 public:
 	RustString() = delete;
 	RustString(const RustString&) = delete;
-
-	RustString(RustString&& rs)
-		: str(std::move(rs.str))
-	{
-		rs.str = nullptr;
-	}
-
-	RustString& operator=(RustString&& rs) noexcept
-	{
-		if (&rs != this) {
-			str = std::move(rs.str);
-		}
-		return *this;
-	}
+	RustString(RustString&& rs) = delete;
+	RustString& operator=(RustString&& rs) noexcept = delete;
 
 	explicit RustString(char* ptr)
 	{
@@ -105,7 +116,7 @@ public:
 
 	operator std::string()
 	{
-		if (str != nullptr){
+		if (str != nullptr) {
 			return std::string(str);
 		}
 		return std::string();

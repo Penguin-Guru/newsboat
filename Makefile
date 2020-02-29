@@ -23,7 +23,7 @@ LDFLAGS+=-L.
 
 PACKAGE=newsboat
 
-ifeq (, $(filter $(MAKECMDGOALS),distclean run-i18nspector))
+ifeq (, $(filter $(MAKECMDGOALS),distclean run-i18nspector fmt))
 include config.mk
 endif
 
@@ -85,11 +85,10 @@ endif
 # additional commands
 MKDIR=mkdir -p
 INSTALL=install
-A2X=a2x
+ASCIIDOCTOR=asciidoctor
 MSGFMT=msgfmt
 RANLIB?=ranlib
 AR?=ar
-CHMOD=chmod
 CARGO=cargo
 
 STFLHDRS:=$(patsubst %.stfl,%.h,$(wildcard stfl/*.stfl))
@@ -106,7 +105,7 @@ all: doc $(NEWSBOAT) $(PODBOAT) mo-files
 NB_DEPS=xlicense.h $(LIB_OUTPUT) $(FILTERLIB_OUTPUT) $(NEWSBOAT_OBJS) $(RSSPPLIB_OUTPUT) $(NEWSBOATLIB_OUTPUT)
 
 $(NEWSBOATLIB_OUTPUT): $(RUST_SRCS)
-	$(CARGO) build $(CARGO_FLAGS)
+	+$(CARGO) build --package libnewsboat-ffi $(CARGO_FLAGS)
 
 $(NEWSBOAT): $(NB_DEPS)
 	$(CXX) $(CXXFLAGS) -o $(NEWSBOAT) $(NEWSBOAT_OBJS) $(NEWSBOAT_LIBS) $(LDFLAGS)
@@ -159,10 +158,11 @@ clean-libnewsboat:
 
 clean-doc:
 	$(RM) -r doc/xhtml 
-	$(RM) doc/*.xml doc/*.1 doc/newsboat-cfgcmds.txt doc/podboat-cfgcmds.txt \
-		doc/newsboat-keycmds.txt doc/configcommands-linked.dsv \
-		doc/podboat-cmds-linked.dsv doc/keycmds-linked.dsv \
-		doc/gen-example-config doc/example-config doc/generate doc/generate2
+	$(RM) doc/*.xml doc/*.1 doc/newsboat-cfgcmds.asciidoc \
+		doc/podboat-cfgcmds.asciidoc doc/newsboat-keycmds.asciidoc \
+		doc/configcommands-linked.dsv doc/podboat-cmds-linked.dsv \
+		doc/keycmds-linked.dsv doc/gen-example-config \
+		doc/example-config doc/generate doc/generate2
 
 clean: clean-newsboat clean-podboat clean-libboat clean-libfilter clean-doc clean-librsspp clean-libnewsboat
 	$(RM) $(STFLHDRS) xlicense.h
@@ -172,50 +172,45 @@ distclean: clean clean-mo clean-test profclean
 
 doc: doc/newsboat.1 doc/podboat.1 doc/xhtml/newsboat.html doc/xhtml/faq.html
 
-doc/xhtml/newsboat.html: doc/newsboat.txt doc/chapter-firststeps.txt doc/configcommands-linked.dsv \
-		doc/keycmds-linked.dsv doc/chapter-tagging.txt doc/chapter-snownews.txt \
-		doc/chapter-cmdline.txt doc/chapter-podcasts.txt doc/podboat-cmds-linked.dsv \
-		doc/chapter-password.txt doc/chapter-environment-variables.txt
+doc/xhtml/newsboat.html: doc/newsboat.asciidoc doc/chapter-firststeps.asciidoc \
+		doc/configcommands-linked.dsv doc/keycmds-linked.dsv \
+		doc/chapter-tagging.asciidoc doc/chapter-snownews.asciidoc \
+		doc/chapter-cmdline.asciidoc doc/chapter-podcasts.asciidoc \
+		doc/podboat-cmds-linked.dsv doc/chapter-password.asciidoc \
+		doc/chapter-environment-variables.asciidoc
 	$(MKDIR) doc/xhtml
-	$(A2X) -f xhtml -D doc/xhtml doc/newsboat.txt
-	$(CHMOD) u+w doc/xhtml/docbook-xsl.css
-	echo "/* AsciiDoc's new tables have <p> inside <td> which wastes vertical space, so fix it */" >> doc/xhtml/docbook-xsl.css
-	echo "td > p { margin: 0; }" >> doc/xhtml/docbook-xsl.css
-	echo "td > p + p { margin-top: 0.5em; }" >> doc/xhtml/docbook-xsl.css
-	echo "td > pre { margin: 0; white-space: pre-wrap; }" >> doc/xhtml/docbook-xsl.css
+	$(ASCIIDOCTOR) --backend=html5 --destination-dir=doc/xhtml doc/newsboat.asciidoc
 
-doc/xhtml/faq.html: doc/faq.txt
+doc/xhtml/faq.html: doc/faq.asciidoc
 	$(MKDIR) doc/xhtml
-	$(A2X) -f xhtml -D doc/xhtml doc/faq.txt
-	$(CHMOD) u+w doc/xhtml/docbook-xsl.css
-	echo "/* AsciiDoc's new tables have <p> inside <td> which wastes vertical space, so fix it */" >> doc/xhtml/docbook-xsl.css
-	echo "td > p { margin: 0; }" >> doc/xhtml/docbook-xsl.css
-	echo "td > p + p { margin-top: 0.5em; }" >> doc/xhtml/docbook-xsl.css
-	echo "td > pre { margin: 0; white-space: pre-wrap; }" >> doc/xhtml/docbook-xsl.css
+	$(ASCIIDOCTOR) --backend=html5 --destination-dir=doc/xhtml doc/faq.asciidoc
 
 doc/generate: doc/generate.cpp doc/split.h
 	$(CXX_FOR_BUILD) $(CXXFLAGS_FOR_BUILD) -o doc/generate doc/generate.cpp
 
-doc/newsboat-cfgcmds.txt: doc/generate doc/configcommands.dsv
-	doc/generate doc/configcommands.dsv > doc/newsboat-cfgcmds.txt
+doc/newsboat-cfgcmds.asciidoc: doc/generate doc/configcommands.dsv
+	doc/generate doc/configcommands.dsv > doc/newsboat-cfgcmds.asciidoc
 
 doc/generate2: doc/generate2.cpp
 	$(CXX_FOR_BUILD) $(CXXFLAGS_FOR_BUILD) -o doc/generate2 doc/generate2.cpp
 
-doc/newsboat-keycmds.txt: doc/generate2 doc/keycmds.dsv
-	doc/generate2 doc/keycmds.dsv > doc/newsboat-keycmds.txt
+doc/newsboat-keycmds.asciidoc: doc/generate2 doc/keycmds.dsv
+	doc/generate2 doc/keycmds.dsv > doc/newsboat-keycmds.asciidoc
 
-doc/newsboat.1: doc/manpage-newsboat.txt doc/chapter-firststeps.txt doc/newsboat-cfgcmds.txt \
-		doc/newsboat-keycmds.txt doc/chapter-tagging.txt doc/chapter-snownews.txt \
-		doc/chapter-cmdline.txt doc/chapter-environment-variables.txt
-	$(A2X) -f manpage doc/manpage-newsboat.txt
+doc/newsboat.1: doc/manpage-newsboat.asciidoc doc/chapter-firststeps.asciidoc \
+		doc/newsboat-cfgcmds.asciidoc doc/newsboat-keycmds.asciidoc \
+		doc/chapter-tagging.asciidoc doc/chapter-snownews.asciidoc \
+		doc/chapter-cmdline.asciidoc \
+		doc/chapter-environment-variables.asciidoc
+	$(ASCIIDOCTOR) --backend=manpage doc/manpage-newsboat.asciidoc
 
-doc/podboat-cfgcmds.txt: doc/generate doc/podboat-cmds.dsv
-	doc/generate doc/podboat-cmds.dsv 'pb-' > doc/podboat-cfgcmds.txt
+doc/podboat-cfgcmds.asciidoc: doc/generate doc/podboat-cmds.dsv
+	doc/generate doc/podboat-cmds.dsv 'pb-' > doc/podboat-cfgcmds.asciidoc
 
-doc/podboat.1: doc/manpage-podboat.txt doc/chapter-podcasts.txt doc/podboat-cfgcmds.txt \
-		doc/chapter-environment-variables.txt
-	$(A2X) -f manpage doc/manpage-podboat.txt
+doc/podboat.1: doc/manpage-podboat.asciidoc doc/chapter-podcasts.asciidoc \
+		doc/podboat-cfgcmds.asciidoc \
+		doc/chapter-environment-variables.asciidoc
+	$(ASCIIDOCTOR) --backend=manpage doc/manpage-podboat.asciidoc
 
 doc/gen-example-config: doc/gen-example-config.cpp doc/split.h
 	$(CXX_FOR_BUILD) $(CXXFLAGS_FOR_BUILD) -o doc/gen-example-config doc/gen-example-config.cpp
@@ -235,7 +230,8 @@ doc/keycmds-linked.dsv: doc/keycmds.dsv
 	sed -E 's/^([^|]+)/[[\1]]<<\1,`\1`>>/' doc/keycmds.dsv > doc/keycmds-linked.dsv
 
 fmt:
-	clang-format --style=file -i *.cpp doc/*.cpp include/*.h rss/*.h rss/*.cpp src/*.cpp test/*.h test/*.cpp
+	astyle --project *.cpp doc/*.cpp include/*.h rss/*.h rss/*.cpp src/*.cpp test/*.h test/*.cpp
+	$(CARGO) fmt
 
 cppcheck:
 	cppcheck -j$(CPPCHECK_JOBS) --force --enable=all --suppress=unusedFunction \
@@ -301,12 +297,15 @@ mo-files: $(MOFILES)
 
 extract:
 	$(RM) $(POTFILE)
-	xgettext -c/ -k_ -k_s -o $(POTFILE) *.cpp src/*.cpp rss/*.cpp
+	xgettext -c/ -k_ -k_s -o po/cpp.pot *.cpp src/*.cpp rss/*.cpp
+	xtr rust/libnewsboat/src/lib.rs --omit-header -o po/rust.pot
+	cat po/cpp.pot po/rust.pot > $(POTFILE)
+	$(RM) -f po/cpp.pot po/rust.pot
 	sed -i 's#Report-Msgid-Bugs-To: \\n#Report-Msgid-Bugs-To: https://github.com/newsboat/newsboat/issues\\n#' $(POTFILE)
 
 
 msgmerge:
-	for f in $(POFILES) ; do msgmerge -U $$f $(POTFILE) ; done
+	for f in $(POFILES) ; do msgmerge --backup=off -U $$f $(POTFILE) ; done
 
 %.mo: %.po
 	$(MSGFMT) --check --statistics -o $@ $<
@@ -339,7 +338,7 @@ uninstall-mo:
 test: test/test rust-test
 
 rust-test:
-	$(CARGO) test --no-run
+	+$(CARGO) test --no-run
 
 TEST_SRCS:=$(wildcard test/*.cpp)
 TEST_OBJS:=$(patsubst %.cpp,%.o,$(TEST_SRCS))

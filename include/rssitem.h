@@ -17,8 +17,7 @@ public:
 	explicit RssItem(Cache* c);
 	~RssItem() override;
 
-	std::string title() const;
-	std::string title_raw() const
+	std::string title() const
 	{
 		return title_;
 	}
@@ -31,15 +30,13 @@ public:
 	}
 	void set_link(const std::string& l);
 
-	std::string author() const;
-	std::string author_raw() const
+	std::string author() const
 	{
 		return author_;
 	}
 	void set_author(const std::string& a);
 
-	std::string description() const;
-	std::string description_raw() const
+	std::string description() const
 	{
 		return description_;
 	}
@@ -130,6 +127,7 @@ public:
 	std::string get_attribute(const std::string& attribname) override;
 
 	void set_feedptr(std::shared_ptr<RssFeed> ptr);
+	void set_feedptr(const std::weak_ptr<RssFeed>& ptr);
 	std::shared_ptr<RssFeed> get_feedptr()
 	{
 		return feedptr_.lock();

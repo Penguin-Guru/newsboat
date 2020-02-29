@@ -7,7 +7,7 @@ int main(int argc, char* argv[])
 {
 	if (argc < 2) {
 		std::cerr << "usage: " << argv[0]
-			  << " <dsv-file> [<link-prefix>]\n";
+			<< " <dsv-file> [<link-prefix>]\n";
 		return 1;
 	}
 
@@ -26,14 +26,14 @@ int main(int argc, char* argv[])
 			const std::string key = matches[1];
 			const std::string desc = matches[2];
 
-			std::cout << "'" << cmd << "' ";
-			std::cout << "(default key: '" << key << "')::\n";
+			std::cout << "_" << cmd << "_ ";
+			std::cout << "(default key: _" << key << "_)::\n";
 			std::cout << "         " << desc << "\n\n";
 		} else {
 			std::cerr << "expected exactly 3 cells in " << argv[1]
-				  << ":" << lineno;
+				<< ":" << lineno;
 			std::cerr << ", but got " << matches.size()
-				  << " instead\n";
+				<< " instead\n";
 			return 1;
 		}
 	}

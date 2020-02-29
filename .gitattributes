@@ -2,8 +2,10 @@
 /.github/ export-ignore
 /git-hooks/ export-ignore
 /snap/ export-ignore
-/.clang-format export-ignore
 /.editorconfig export-ignore
 /.gitignore export-ignore
+/.gitattributes export-ignore
 /.travis.yml export-ignore
+/.cirrus.yml export-ignore
 /submit-to-coveralls.sh export-ignore
+/docker/ export-ignore

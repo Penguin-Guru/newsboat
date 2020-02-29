@@ -1,14 +1,109 @@
 # Changes for Newsboat
 
-
-## 2.17 - expected 2019-09-22
+## Unreleased - expected 2020-03-21
 
 ### Added
+- `%K` format for  `podlist-format`. This format specifier is replaced by the
+  human readable download speed (automatically switches between KB/s, MB/s, and
+  GB/s)
+
 ### Changed
+- `podlist-format` which now uses `%K` instead of `%k` by default (shows human
+  readable speed instead of always using KB/s)
+- The EOT markers ("~" characters below blocks of text) no longer inherit their
+  style (colors + attributes) from the "article" style. Instead, they can be
+  configured separately allowing to hide them without hiding the article text
+  (example config line: `color end-of-text-marker default default invis`)
+
 ### Deprecated
 ### Removed
 ### Fixed
 ### Security
+
+
+
+## 2.18 - 2019-12-22
+
+Lists below only mention user-visible changes, but I would also like to
+acknowledge contributions from the following people: Simon Schuster, and seanBE.
+
+### Added
+- Logo by noobilanderi
+
+### Changed
+- `open-in-browser-and-mark-read` no longer marks item read if browser returned
+    a non-zero exit code. Similarly, `open-all-unread-in-browser` and
+    `open-all-unread-in-browser-and-mark-read` abort on non-zero exit code
+    (Marco Sirabella)
+- Update vendored version of Catch2 to 2.11.0
+- Update vendored version of nlohmann/json to 3.7.3
+- Update translations: German (Lysander Trischler), Russian, Ukrainian
+    (Alexander Batischev)
+
+### Fixed
+- `unbind-key -a` breaking cmdline, search and goto-url (#454) (kmws)
+- Flaky `run_command()` test (Alexander Batischev)
+
+### Security
+- smallvec crate bumped to 0.6.10, to get fixes for RUSTSEC-2019-0009 and
+    RUSTSEC-2019-0012
+
+
+
+## 2.17.1 - 2019-10-02
+
+### Added
+- Mention that `cookie-cache` setting uses Netscape file format (Alexander
+    Batischev on a prod from f-a)
+
+### Changed
+- Update German translation (Lysander Trischler)
+
+### Fixed
+- Feeds not updating when `max-items` is set (#650). This negates some of the
+    performance improvement we got in 2.17, but we haven't measured how much;
+    it's guaranteed to not be any slower than 2.16.1 (Alexander Batischev)
+- Failing to start if config contains `#` that doesn't start a comment, e.g.
+    inside regular or filter expression (#652) (Alexander Batischev)
+
+
+
+## 2.17 - 2019-09-22
+
+Lists below only mention user-visible changes, but I would also like to
+acknowledge contributions from the following people: Raphael Nestler, kpcyrd,
+and seanBE.
+
+### Added
+- FreeBSD and Linux i686 jobs on continuous integration servers. We won't break
+    the build on these platforms ever again (Alexander Batischev)
+- Documentation for `macro-prefix` settings (Lysander Trischler)
+- `save-all` operation, to save all articles in the feed (Romeu Vieira)
+- `dirbrowser-title-format` setting, used in the DirBrowser dialog invoked by
+    `save-all` operation (Romeu Vieira)
+- `dirbrowser` context in `bind-key` command, to add bindings to DirBrowser
+    dialog invoked by `save-all` (Alexander Batischev)
+- `selecttag-format` setting, to control how the lines in "Select tag" dialog
+    look (Penguin-Guru, Alexander Batischev) (#588)
+
+### Changed
+- Bumped minimum required Rust version to 1.26.0
+- Update vendored version of nlohmann/json to 3.7.0
+- Update vendored version of Catch2 to 2.9.2
+- Update Italian translations (Leandro Noferini)
+
+### Removed
+- Some unnecessary work done at startup time, shaving off 6% in my tests
+    (Alexander Batischev)
+
+### Fixed
+- `newsboat --version` not displaying the version (Alexander Batischev) (#579)
+- Processing backticks inside comments (Jan Staněk)
+- Use-after-free crash when opening an article (Juho Pohjala) (#189)
+- Crash on `toggle-item-read` in an empty feed (Nikos Tsipinakis)
+- Un-applying a filter when command is ran (Nikos Tsipinakis) (#607)
+- Numerous memory leaks detected by Clang's AddressSanitizer (Alexander
+    Batischev) (#620, #621, #623, #624)
 
 
 

@@ -1,5 +1,6 @@
 #include "pbview.h"
 
+#include <cinttypes>
 #include <cstdio>
 #include <cstring>
 #include <curses.h>
@@ -46,7 +47,8 @@ void PbView::run(bool auto_download)
 
 	do {
 		if (ctrl->view_update_necessary()) {
-			double total_kbps = ctrl->get_total_kbps();
+			const double total_kbps = ctrl->get_total_kbps();
+			const auto speed = get_speed_human_readable(total_kbps);
 
 			char parbuf[128] = "";
 			if (ctrl->get_maxdownloads() > 1) {
@@ -60,12 +62,13 @@ void PbView::run(bool auto_download)
 			snprintf(buf,
 				sizeof(buf),
 				_("Queue (%u downloads in progress, %u total) "
-				  "- %.2f kb/s total%s"),
+					"- %.2f %s total%s"),
 				static_cast<unsigned int>(
 					ctrl->downloads_in_progress()),
 				static_cast<unsigned int>(
 					ctrl->downloads().size()),
-				total_kbps,
+				speed.first,
+				speed.second.c_str(),
 				parbuf);
 
 			dllist_form.set("head", buf);
@@ -73,8 +76,8 @@ void PbView::run(bool auto_download)
 			LOG(Level::DEBUG,
 				"PbView::run: updating view... "
 				"downloads().size() "
-				"= %u",
-				ctrl->downloads().size());
+				"= %" PRIu64,
+				static_cast<uint64_t>(ctrl->downloads().size()));
 
 			std::string code = "{list";
 			std::string formatstring = ctrl->get_formatstr();
@@ -108,8 +111,9 @@ void PbView::run(bool auto_download)
 			}
 		}
 
-		if (!event || strcmp(event, "TIMEOUT") == 0)
+		if (!event || strcmp(event, "TIMEOUT") == 0) {
 			continue;
+		}
 
 		Operation op = keys->get_operation(event, "podbeuter");
 
@@ -127,7 +131,7 @@ void PbView::run(bool auto_download)
 			if (ctrl->downloads_in_progress() > 0) {
 				dllist_form.set("msg",
 					_("Error: can't quit: download(s) in "
-					  "progress."));
+						"progress."));
 				ctrl->set_view_update_necessary(true);
 			} else {
 				quit = true;
@@ -147,12 +151,13 @@ void PbView::run(bool auto_download)
 				if (ctrl->downloads()[idx].status() !=
 					DlStatus::DOWNLOADING) {
 					std::thread t{PodDlThread(
-						&ctrl->downloads()[idx],
-						ctrl->get_cfgcont())};
+							&ctrl->downloads()[idx],
+							ctrl->get_cfgcont())};
 					t.detach();
 				}
 			}
-		} break;
+		}
+		break;
 		case OP_PB_PLAY: {
 			std::istringstream os(dllist_form.get("dlposname"));
 			int idx = -1;
@@ -164,17 +169,18 @@ void PbView::run(bool auto_download)
 					status == DlStatus::PLAYED ||
 					status == DlStatus::READY) {
 					ctrl->play_file(ctrl->downloads()[idx]
-								.filename());
+						.filename());
 					ctrl->downloads()[idx].set_status(
 						DlStatus::PLAYED);
 				} else {
 					dllist_form.set("msg",
 						_("Error: download needs to be "
-						  "finished before the file "
-						  "can be played."));
+							"finished before the file "
+							"can be played."));
 				}
 			}
-		} break;
+		}
+		break;
 		case OP_PB_MARK_FINISHED: {
 			std::istringstream os(dllist_form.get("dlposname"));
 			int idx = -1;
@@ -187,7 +193,8 @@ void PbView::run(bool auto_download)
 						DlStatus::FINISHED);
 				}
 			}
-		} break;
+		}
+		break;
 		case OP_PB_CANCEL: {
 			std::istringstream os(dllist_form.get("dlposname"));
 			int idx = -1;
@@ -199,7 +206,8 @@ void PbView::run(bool auto_download)
 						DlStatus::CANCELLED);
 				}
 			}
-		} break;
+		}
+		break;
 		case OP_PB_DELETE: {
 			std::istringstream os(dllist_form.get("dlposname"));
 			int idx = -1;
@@ -211,14 +219,15 @@ void PbView::run(bool auto_download)
 						DlStatus::DELETED);
 				}
 			}
-		} break;
+		}
+		break;
 		case OP_PB_PURGE:
 			if (ctrl->downloads_in_progress() > 0) {
 				dllist_form.set("msg",
 					_("Error: unable to perform operation: "
-					  "download(s) in progress."));
+						"download(s) in progress."));
 			} else {
-				ctrl->reload_queue(true);
+				ctrl->purge_queue();
 			}
 			ctrl->set_view_update_necessary(true);
 			break;
@@ -264,6 +273,17 @@ void PbView::set_bindings()
 	}
 }
 
+std::pair<double, std::string> PbView::get_speed_human_readable(double kbps)
+{
+	if (kbps < 1024) {
+		return std::make_pair(kbps, _("KB/s"));
+	} else if (kbps < 1024 * 1024) {
+		return std::make_pair(kbps / 1024, _("MB/s"));
+	} else {
+		return std::make_pair(kbps / 1024 / 1024, _("GB/s"));
+	}
+}
+
 void PbView::run_help()
 {
 	set_help_keymap_hint();
@@ -299,8 +319,9 @@ void PbView::run_help()
 
 	do {
 		const char* event = help_form.run(0);
-		if (!event)
+		if (!event) {
 			continue;
+		}
 
 		Operation op = keys->get_operation(event, "help");
 
@@ -345,7 +366,8 @@ void PbView::set_dllist_keymap_hint()
 		{OP_PB_PLAY, _("Play")},
 		{OP_PB_MARK_FINISHED, _("Mark as Finished")},
 		{OP_HELP, _("Help")},
-		{OP_NIL, nullptr}};
+		{OP_NIL, nullptr}
+	};
 
 	std::string keymap_hint = prepare_keymaphint(hints);
 	dllist_form.set("help", keymap_hint);
@@ -358,13 +380,17 @@ std::string PbView::format_line(const std::string& podlist_format,
 {
 	FmtStrFormatter fmt;
 
+	const double speed_kbps = dl.kbps();
+	const auto speed = get_speed_human_readable(speed_kbps);
+
 	fmt.register_fmt('i', strprintf::fmt("%u", pos + 1));
 	fmt.register_fmt('d',
 		strprintf::fmt("%.1f", dl.current_size() / (1024 * 1024)));
 	fmt.register_fmt(
 		't', strprintf::fmt("%.1f", dl.total_size() / (1024 * 1024)));
 	fmt.register_fmt('p', strprintf::fmt("%.1f", dl.percents_finished()));
-	fmt.register_fmt('k', strprintf::fmt("%.2f", dl.kbps()));
+	fmt.register_fmt('k', strprintf::fmt("%.2f", speed_kbps));
+	fmt.register_fmt('K', strprintf::fmt("%.2f %s", speed.first, speed.second));
 	fmt.register_fmt('S', strprintf::fmt("%s", dl.status_text()));
 	fmt.register_fmt('u', strprintf::fmt("%s", dl.url()));
 	fmt.register_fmt('F', strprintf::fmt("%s", dl.filename()));

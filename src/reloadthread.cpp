@@ -1,5 +1,6 @@
 #include "reloadthread.h"
 
+#include <cinttypes>
 #include <unistd.h>
 
 #include "logger.h"
@@ -14,8 +15,11 @@ ReloadThread::ReloadThread(Controller* c, ConfigContainer* cf)
 	, cfg(cf)
 {
 	LOG(Level::INFO,
-		"ReloadThread: waiting %u seconds between reloads",
-		waittime_sec);
+		"ReloadThread: waiting %" PRIi64 " seconds between reloads",
+		// In GCC, `time t` is `long int`, which is at least 32 bits. On
+		// x86_64, it's 64 bits. Thus, this cast is either a no-op, or an
+		// up-cast which are always safe.
+		static_cast<int64_t>(waittime_sec));
 }
 
 ReloadThread::~ReloadThread() {}
@@ -27,8 +31,9 @@ void ReloadThread::operator()()
 		LOG(Level::INFO, "ReloadThread: starting reload");
 
 		waittime_sec = 60 * cfg->get_configvalue_as_int("reload-time");
-		if (waittime_sec == 0)
+		if (waittime_sec == 0) {
 			waittime_sec = 60;
+		}
 
 		if (cfg->get_configvalue_as_bool("auto-reload")) {
 			if (suppressed_first) {
@@ -36,15 +41,14 @@ void ReloadThread::operator()()
 			} else {
 				suppressed_first = true;
 				if (!cfg->get_configvalue_as_bool(
-					    "suppress-first-reload")) {
+						"suppress-first-reload")) {
 					ctrl->get_reloader()
-						->start_reload_all_thread();
+					->start_reload_all_thread();
 				}
 			}
 		} else {
-			waittime_sec = 60; // if auto-reload is disabled, we
-					   // poll every 60 seconds whether it
-					   // changed.
+			// if auto-reload is disabled, we poll every 60 seconds whether it changed.
+			waittime_sec = 60;
 		}
 
 		time_t seconds_to_wait = 0;

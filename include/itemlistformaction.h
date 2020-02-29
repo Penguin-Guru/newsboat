@@ -29,9 +29,7 @@ public:
 	void set_redraw(bool b) override
 	{
 		FormAction::set_redraw(b);
-		apply_filter = !(v->get_cfg()->get_configvalue_as_bool(
-			"show-read-articles"));
-		invalidate(InvalidationMode::COMPLETE);
+		invalidate_everything();
 	}
 
 	void set_feed(std::shared_ptr<RssFeed> fd);
@@ -100,14 +98,11 @@ private:
 	void handle_cmdline_num(unsigned int idx);
 
 	std::string gen_flags(std::shared_ptr<RssItem> item);
-	std::string gen_datestr(time_t t, const std::string& datetimeformat);
 
 	void prepare_set_filterpos();
 
-	void invalidate(InvalidationMode m)
+	void invalidate_everything()
 	{
-		assert(m == InvalidationMode::COMPLETE);
-
 		invalidated = true;
 		invalidation_mode = InvalidationMode::COMPLETE;
 	}
@@ -115,8 +110,9 @@ private:
 	void invalidate(const unsigned int invalidated_pos)
 	{
 		if (invalidated == true &&
-			invalidation_mode == InvalidationMode::COMPLETE)
+			invalidation_mode == InvalidationMode::COMPLETE) {
 			return;
+		}
 
 		invalidated = true;
 		invalidation_mode = InvalidationMode::PARTIAL;
@@ -158,6 +154,8 @@ private:
 	ListFormatter listfmt;
 	Cache* rsscache;
 	FilterContainer* filters;
+
+	void handle_op_saveall();
 };
 
 } // namespace newsboat

@@ -2,6 +2,13 @@ language: rust
 
 rust: stable
 
+cache:
+  directories:
+    - $HOME/.cargo/registry
+
+before_cache:
+  - rm -rf $HOME/.cargo/registry/index
+
 addons:
   apt:
     packages: &global_deps
@@ -11,22 +18,16 @@ addons:
     - libstfl-dev
     - libjson-c-dev
     - libncursesw5-dev
-    - asciidoc
-    - libxml2-utils
-    - xsltproc
-    - docbook-xml
-    - docbook-xsl
+    - asciidoctor
 addons:
   apt:
     packages: &clang_deps
     - *global_deps
-    - g++-4.9 # required for some niceties in C++ standard library
-
-install_coveralls_commands: &install_coveralls
-  - pip install --user cpp-coveralls
+    - g++ # required for some niceties in C++ standard library
 
 newsboat_brew_commands: &osx_deps
   - brew update
+  - brew unlink python@2 # to prevent conflict with Python 3, see https://travis-ci.org/newsboat/newsboat/jobs/649475862#L1510
   - brew install gcc || brew link --overwrite gcc
   - brew outdated "pkg-config" || brew upgrade "pkg-config"
   - brew install "gettext" && brew link --force "gettext"
@@ -34,13 +35,7 @@ newsboat_brew_commands: &osx_deps
   - brew outdated "curl" || brew upgrade "curl"
   - brew install "libstfl"
   - brew outdated "json-c" || brew upgrade "json-c"
-  - brew install "asciidoc"
-  - brew install "docbook-xsl"
-  - brew outdated "python" || brew upgrade "python"
-  - brew install "pyenv" || brew upgrade "pyenv"
-  - eval "$(pyenv init -)"
-  - pip3 install cpp-coveralls
-  - pyenv rehash
+  - brew install "asciidoctor"
 
 env:
   - CXXFLAGS='-fstack-clash-protection -D_GLIBCXX_ASSERTIONS -Wformat -Wformat-security -fstack-protector-strong --param=ssp-buffer-size=4 -D_FORTIFY_SOURCE=2'
@@ -50,285 +45,106 @@ matrix:
   include:
     - compiler: gcc
       os: osx
-      rust: 1.25.0
+      rust: 1.26.0
       env:
         - COMPILER=g++
-        - GCOV=/usr/bin/gcov
-        # a2x will run xmllint on generated files, so we have to pass the path
-        # to AsciiDoc's catalog files
-        - XML_CATALOG_FILES=/usr/local/etc/xml/catalog
       before_install:
         *osx_deps
     - compiler: gcc
       os: osx
       env:
         - COMPILER=g++
-        - GCOV=/usr/bin/gcov
-        # a2x will run xmllint on generated files, so we have to pass the path
-        # to AsciiDoc's catalog files
-        - XML_CATALOG_FILES=/usr/local/etc/xml/catalog
       before_install:
         *osx_deps
     - compiler: clang
       os: osx
       env:
         - COMPILER=clang++
-        - GCOV=/usr/bin/gcov
-        # a2x will run xmllint on generated files, so we have to pass the path
-        # to AsciiDoc's catalog files
-        - XML_CATALOG_FILES=/usr/local/etc/xml/catalog
       before_install:
         *osx_deps
     - compiler: gcc-8
       os: linux
-      dist: trusty
+      dist: bionic
       addons:
         apt:
           sources:
-            - ubuntu-toolchain-r-test
+            - sourceline: "ppa:ubuntu-toolchain-r/test"
           packages:
             - g++-8
             - *global_deps
       env:
         - COMPILER=g++-8
-        - GCOV=/usr/bin/gcov-8
       script: &release_build_script
-        - CXXFLAGS="$CXXFLAGS -O3" make -j2 --keep-going all test
+        - CXXFLAGS="$CXXFLAGS -Wnull-dereference -Wdouble-promotion -O3" make -j2 --keep-going all test
         - ( cd test && ./test --order rand ); ret=$?; (cargo test) && sh -c "exit $ret"
     - compiler: clang-8
       os: linux
-      dist: trusty
+      dist: bionic
       addons:
         apt:
           sources:
-            - ubuntu-toolchain-r-test
-            - llvm-toolchain-trusty-8
+            - sourceline: "ppa:ubuntu-toolchain-r/test"
           packages:
             - clang-8
             - llvm-8
             - *clang_deps
       env:
         - COMPILER=clang++-8
-        - GCOV="llvm-cov-8 gcov"
       script: *release_build_script
     - compiler: gcc-4.9
       os: linux
-      dist: trusty
-      rust: 1.25.0
+      dist: xenial
+      rust: 1.26.0
       addons:
         apt:
           sources:
-            - ubuntu-toolchain-r-test
+            - sourceline: "ppa:ubuntu-toolchain-r/test"
           packages:
             - g++-4.9
             - *global_deps
       env:
         - COMPILER=g++-4.9
-        - GCOV=/usr/bin/gcov-4.9
-      before_install:
-        *install_coveralls
     - compiler: gcc-4.9
       os: linux
-      dist: trusty
+      dist: xenial
       addons:
         apt:
           sources:
-            - ubuntu-toolchain-r-test
+            - sourceline: "ppa:ubuntu-toolchain-r/test"
           packages:
             - g++-4.9
             - *global_deps
       env:
         - COMPILER=g++-4.9
-        - GCOV=/usr/bin/gcov-4.9
-      before_install:
-        *install_coveralls
-    - compiler: gcc-5
+    - name: "Test Coverage"
+      compiler: clang-8
       os: linux
-      dist: trusty
+      dist: bionic
+      rust: nightly
       addons:
         apt:
           sources:
-            - ubuntu-toolchain-r-test
-          packages:
-            - g++-5
-            - *global_deps
-      env:
-        - COMPILER=g++-5
-        - GCOV=/usr/bin/gcov-5
-      before_install:
-        *install_coveralls
-    - compiler: gcc-6
-      os: linux
-      dist: trusty
-      addons:
-        apt:
-          sources:
-            - ubuntu-toolchain-r-test
-          packages:
-            - g++-6
-            - *global_deps
-      env:
-        - COMPILER=g++-6
-        - GCOV=/usr/bin/gcov-6
-      before_install:
-        *install_coveralls
-    - compiler: gcc-7
-      os: linux
-      dist: trusty
-      addons:
-        apt:
-          sources:
-            - ubuntu-toolchain-r-test
-          packages:
-            - g++-7
-            - *global_deps
-      env:
-        - COMPILER=g++-7
-        - GCOV=/usr/bin/gcov-7
-      before_install:
-        *install_coveralls
-    - compiler: gcc-8
-      os: linux
-      dist: trusty
-      addons:
-        apt:
-          sources:
-            - ubuntu-toolchain-r-test
-          packages:
-            - g++-8
-            - *global_deps
-      env:
-        - COMPILER=g++-8
-        - GCOV=/usr/bin/gcov-8
-      before_install:
-        *install_coveralls
-    - compiler: gcc-9
-      os: linux
-      dist: trusty
-      addons:
-        apt:
-          sources:
-            - ubuntu-toolchain-r-test
-          packages:
-            - g++-9
-            - *global_deps
-      env:
-        - COMPILER=g++-9
-        - GCOV=/usr/bin/gcov-9
-      before_install:
-        *install_coveralls
-    - compiler: clang
-      os: linux
-      dist: trusty
-      addons:
-        apt:
-          sources:
-            - ubuntu-toolchain-r-test
-          packages:
-            - *clang_deps
-      env:
-        - COMPILER=clang++
-        - GCOV="llvm-cov gcov"
-      before_install:
-        *install_coveralls
-    - compiler: clang-4.0
-      os: linux
-      dist: trusty
-      addons:
-        apt:
-          sources:
-            - ubuntu-toolchain-r-test
-            - llvm-toolchain-trusty-4.0
-          packages:
-            - clang-4.0
-            - llvm-4.0
-            - *clang_deps
-      env:
-        - COMPILER=clang++-4.0
-        - GCOV="llvm-cov-4.0 gcov"
-      before_install:
-        *install_coveralls
-    - compiler: clang-5.0
-      os: linux
-      dist: trusty
-      addons:
-        apt:
-          sources:
-            - ubuntu-toolchain-r-test
-            - llvm-toolchain-trusty-5.0
-          packages:
-            - clang-5.0
-            - llvm-5.0
-            - *clang_deps
-      env:
-        - COMPILER=clang++-5.0
-        - GCOV="llvm-cov-5.0 gcov"
-      before_install:
-        *install_coveralls
-    - compiler: clang-6.0
-      os: linux
-      dist: trusty
-      addons:
-        apt:
-          sources:
-            - ubuntu-toolchain-r-test
-            - llvm-toolchain-trusty-6.0
-          packages:
-            - clang-6.0
-            - llvm-6.0
-            - *clang_deps
-      env:
-        - COMPILER=clang++-6.0
-        - GCOV="llvm-cov-6.0 gcov"
-      before_install:
-        *install_coveralls
-    - compiler: clang-7
-      os: linux
-      dist: trusty
-      addons:
-        apt:
-          sources:
-            - ubuntu-toolchain-r-test
-            - llvm-toolchain-trusty-7
-          packages:
-            - clang-7
-            - llvm-7
-            - *clang_deps
-      env:
-        - COMPILER=clang++-7
-        - GCOV="llvm-cov-7 gcov"
-      before_install:
-        *install_coveralls
-    - compiler: clang-8
-      os: linux
-      dist: trusty
-      addons:
-        apt:
-          sources:
-            - ubuntu-toolchain-r-test
-            - llvm-toolchain-trusty-8
+            - sourceline: "ppa:ubuntu-toolchain-r/test"
           packages:
             - clang-8
             - llvm-8
             - *clang_deps
       env:
         - COMPILER=clang++-8
-        - GCOV="llvm-cov-8 gcov"
+        - REPORT_COVERAGE=yes
       before_install:
-        *install_coveralls
-    - addons:
+        - cargo install --git https://github.com/Minoru/grcov --branch newsboat-testing-ground
+
+          # Can't have these in the `env` section above, because these settings break `cargo install`
+        - export CARGO_INCREMENTAL=0
+        - export RUSTFLAGS="-Zprofile -Ccodegen-units=1 -Cinline-threshold=0 -Clink-dead-code -Coverflow-checks=off -Zno-landing-pads"
+    - name: "i18nspector"
+      addons:
         apt:
           packages:
             - i18nspector
       env:
         - CHECKS=i18nspector
-    - addons:
-        apt:
-          packages: []
-      env:
-        - CHECKS="cargo-fmt"
-      before_install:
-        - rustup component add rustfmt
 
 install:
   - export CXX=$COMPILER
@@ -346,8 +162,7 @@ script:
   # exit code and chain it to Rust's in the end.
   - if [ -z "$CHECKS" ]; then   ( cd test && ./test --order rand ); ret=$?; (cargo test) && sh -c "exit $ret"   ; fi
   - if [ "$CHECKS" = "i18nspector" ]; then   make run-i18nspector | tee i18nspector.log && if `egrep '^(E|W):' i18nspector.log >/dev/null 2>&1` ; then false else true; fi   ; fi
-  - if [ "$CHECKS" = "cargo-fmt" ]; then cargo fmt -- --check; fi
 
 after_success:
   - cd ${TRAVIS_BUILD_DIR}
-  - if [ -z "$CHECKS" ]; then   ./submit-to-coveralls.sh   ; fi
+  - if [ -n "${REPORT_COVERAGE}" ]; then   ./submit-to-coveralls.sh   ; fi

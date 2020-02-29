@@ -1,6 +1,7 @@
 #include "tagsouppullparser.h"
 
 #include <algorithm>
+#include <cinttypes>
 #include <cstdlib>
 #include <iostream>
 #include <istream>
@@ -99,20 +100,23 @@ void TagSoupPullParser::skip_whitespace()
 	do {
 		inputstream->read(&c, 1);
 		if (!inputstream->eof()) {
-			if (!isspace(c))
+			if (!isspace(c)) {
 				break;
-			else
-				ws.append(1, c);
+			} else {
+				ws.push_back(c);
+			}
 		}
 	} while (!inputstream->eof() && !inputstream->fail());
 }
 
 void TagSoupPullParser::add_attribute(std::string s)
 {
-	if (s.length() > 0 && s[s.length() - 1] == '/')
+	if (s.length() > 0 && s[s.length() - 1] == '/') {
 		s.erase(s.length() - 1, 1);
-	if (s.length() == 0)
+	}
+	if (s.length() == 0) {
 		return;
+	}
 	std::string::size_type equalpos = s.find_first_of("=", 0);
 	std::string attribname, attribvalue;
 
@@ -136,10 +140,9 @@ std::string TagSoupPullParser::read_tag()
 	std::string s;
 	getline(*inputstream, s, '>');
 	if (inputstream->eof()) {
+		// TODO: test whether this works reliably
 		throw XmlException(
-			_("EOF found while reading XML tag")); // TODO: test
-							       // whether this
-							       // works reliably
+			_("EOF found while reading XML tag"));
 	}
 	return s;
 }
@@ -158,10 +161,12 @@ std::string TagSoupPullParser::decode_attribute(const std::string& s)
 	std::string s1 = s;
 	if ((s1[0] == '"' && s1[s1.length() - 1] == '"') ||
 		(s1[0] == '\'' && s1[s1.length() - 1] == '\'')) {
-		if (s1.length() > 0)
+		if (s1.length() > 0) {
 			s1.erase(0, 1);
-		if (s1.length() > 0)
+		}
+		if (s1.length() > 0) {
 			s1.erase(s1.length() - 1, 1);
+		}
 	}
 	return decode_entities(s1);
 }
@@ -447,7 +452,8 @@ static struct {
 	{"clubs", 9827},
 	{"hearts", 9829},
 	{"diams", 9830},
-	{0, 0}};
+	{0, 0}
+};
 
 std::string TagSoupPullParser::decode_entity(std::string s)
 {
@@ -535,16 +541,17 @@ void TagSoupPullParser::parse_tag(const std::string& tagstr)
 	unsigned int count = 0;
 
 	LOG(Level::DEBUG,
-		"parse_tag: parsing '%s', pos = %d, last_pos = %d",
+		"parse_tag: parsing '%s', pos = %" PRIu64 ", last_pos = %" PRIu64,
 		tagstr,
-		pos,
-		last_pos);
+		static_cast<uint64_t>(pos),
+		static_cast<uint64_t>(last_pos));
 
 	while (last_pos != std::string::npos) {
 		if (count == 0) {
 			// first token: tag name
-			if (pos == std::string::npos)
+			if (pos == std::string::npos) {
 				pos = tagstr.length();
+			}
 			text = tagstr.substr(last_pos, pos - last_pos);
 			if (text[text.length() - 1] == '/') {
 				// a kludge for <br/>
@@ -562,18 +569,19 @@ void TagSoupPullParser::parse_tag(const std::string& tagstr)
 					if (tagstr[pos + 1] == '\'' ||
 						tagstr[pos + 1] == '"') {
 						pos = tagstr.find_first_of(
-							tagstr[pos + 1],
-							pos + 2);
-						if (pos != std::string::npos)
+								tagstr[pos + 1],
+								pos + 2);
+						if (pos != std::string::npos) {
 							pos++;
+						}
 						LOG(Level::DEBUG,
 							"parse_tag: finding "
 							"ending "
-							"quote, pos = %d",
-							pos);
+							"quote, pos = %" PRIu64,
+							static_cast<uint64_t>(pos));
 					} else {
 						pos = tagstr.find_first_of(
-							" \r\n\t", pos + 1);
+								" \r\n\t", pos + 1);
 						LOG(Level::DEBUG,
 							"parse_tag: finding "
 							"end of "
@@ -614,9 +622,10 @@ void TagSoupPullParser::handle_tag()
 
 void TagSoupPullParser::handle_text()
 {
-	if (current_event != Event::START_DOCUMENT)
+	if (current_event != Event::START_DOCUMENT) {
 		text.append(ws);
-	text.append(1, c);
+	}
+	text.push_back(c);
 	std::string tmp;
 	getline(*inputstream, tmp, '<');
 	text.append(tmp);

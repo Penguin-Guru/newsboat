@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cerrno>
+#include <cinttypes>
 #include <cstring>
 #include <curl/curl.h>
 #include <sstream>
@@ -33,8 +34,6 @@ RssParser::RssParser(const std::string& uri,
 	: my_uri(uri)
 	, ch(c)
 	, cfgcont(cfg)
-	, skip_parsing(false)
-	, is_valid(false)
 	, ign(ii)
 	, api(a)
 	, easyhandle(0)
@@ -48,28 +47,29 @@ RssParser::~RssParser() {}
 
 std::shared_ptr<RssFeed> RssParser::parse()
 {
-	std::shared_ptr<RssFeed> feed(new RssFeed(ch));
-
-	feed->set_rssurl(my_uri);
-
 	retrieve_uri(my_uri);
 
-	if (!skip_parsing && is_valid) {
-		/*
-		 * After parsing is done, we fill our feed object with title,
-		 * description, etc.  It's important to note that all data that
-		 * comes from rsspp must be converted to UTF-8 before, because
-		 * all data is internally stored as UTF-8, and converted
-		 * on-the-fly in case some other encoding is required. This is
-		 * because UTF-8 can hold all available Unicode characters,
-		 * unlike other non-Unicode encodings.
-		 */
-
-		fill_feed_fields(feed);
-		fill_feed_items(feed);
-
-		ch->remove_old_deleted_items(feed.get());
+	if (f.rss_version == rsspp::Feed::Version::UNKNOWN) {
+		return nullptr;
 	}
+
+	std::shared_ptr<RssFeed> feed(new RssFeed(ch));
+	feed->set_rssurl(my_uri);
+
+	/*
+	 * After parsing is done, we fill our feed object with title,
+	 * description, etc.  It's important to note that all data that
+	 * comes from rsspp must be converted to UTF-8 before, because
+	 * all data is internally stored as UTF-8, and converted
+	 * on-the-fly in case some other encoding is required. This is
+	 * because UTF-8 can hold all available Unicode characters,
+	 * unlike other non-Unicode encodings.
+	 */
+
+	fill_feed_fields(feed);
+	fill_feed_items(feed);
+
+	ch->remove_old_deleted_items(feed.get());
 
 	feed->set_empty(false);
 
@@ -85,8 +85,8 @@ time_t RssParser::parse_date(const std::string& datestr)
 			"out "
 			"W3CDTF parser...");
 		t = curl_getdate(
-			rsspp::RssParser::__w3cdtf_to_rfc822(datestr).c_str(),
-			nullptr);
+				rsspp::RssParser::w3cdtf_to_rfc822(datestr).c_str(),
+				nullptr);
 	}
 	if (t == -1) {
 		LOG(Level::INFO,
@@ -112,8 +112,9 @@ std::string RssParser::render_xhtml_title(const std::string& title,
 	std::vector<std::pair<LineType, std::string>> lines;
 	std::vector<LinkPair> links; // not needed
 	rnd.render(title, lines, links, link);
-	if (!lines.empty())
+	if (!lines.empty()) {
 		return lines[0].second;
+	}
 	return "";
 }
 
@@ -170,11 +171,12 @@ void RssParser::retrieve_uri(const std::string& uri)
 		utils::extract_filter(uri, filter, url);
 		download_filterplugin(filter, url);
 	} else if (utils::is_query_url(my_uri)) {
-		skip_parsing = true;
+		f.rss_version = rsspp::Feed::Version::UNKNOWN;
 	} else if (my_uri.substr(0, 7) == "file://") {
 		parse_file(my_uri.substr(7, my_uri.length() - 7));
-	} else
+	} else {
 		throw strprintf::fmt(_("Error: unsupported URL: %s"), my_uri);
+	}
 }
 
 void RssParser::download_http(const std::string& uri)
@@ -184,7 +186,6 @@ void RssParser::download_http(const std::string& uri)
 	std::string proxy;
 	std::string proxy_auth;
 	std::string proxy_type;
-	is_valid = false;
 
 	if (cfgcont->get_configvalue_as_bool("use-proxy") == true) {
 		proxy = cfgcont->get_configvalue("proxy");
@@ -192,101 +193,90 @@ void RssParser::download_http(const std::string& uri)
 		proxy_type = cfgcont->get_configvalue("proxy-type");
 	}
 
-	for (unsigned int i = 0; i < retrycount && !is_valid; i++) {
-		try {
-			std::string useragent = utils::get_useragent(cfgcont);
-			LOG(Level::DEBUG,
-				"RssParser::download_http: user-agent = %s",
-				useragent);
-			rsspp::Parser p(cfgcont->get_configvalue_as_int(
-						"download-timeout"),
-				useragent.c_str(),
-				proxy.c_str(),
-				proxy_auth.c_str(),
-				utils::get_proxy_type(proxy_type),
-				cfgcont->get_configvalue_as_bool(
-					"ssl-verifypeer"));
-			time_t lm = 0;
-			std::string etag;
-			if (!ign || !ign->matches_lastmodified(uri)) {
-				ch->fetch_lastmodified(uri, lm, etag);
-			}
-			f = p.parse_url(uri,
+	for (unsigned int i = 0; i < retrycount
+		&& f.rss_version == rsspp::Feed::Version::UNKNOWN; i++) {
+		std::string useragent = utils::get_useragent(cfgcont);
+		LOG(Level::DEBUG,
+			"RssParser::download_http: user-agent = %s",
+			useragent);
+		rsspp::Parser p(cfgcont->get_configvalue_as_int(
+				"download-timeout"),
+			useragent.c_str(),
+			proxy.c_str(),
+			proxy_auth.c_str(),
+			utils::get_proxy_type(proxy_type),
+			cfgcont->get_configvalue_as_bool(
+				"ssl-verifypeer"));
+		time_t lm = 0;
+		std::string etag;
+		if (!ign || !ign->matches_lastmodified(uri)) {
+			ch->fetch_lastmodified(uri, lm, etag);
+		}
+		f = p.parse_url(uri,
 				lm,
 				etag,
 				api,
 				cfgcont->get_configvalue("cookie-cache"),
 				easyhandle ? easyhandle->ptr() : 0);
+		LOG(Level::DEBUG,
+			"RssParser::download_http: lm = %" PRId64 " etag = %s",
+			// On GCC, `time_t` is `long int`, which is at least 32 bits
+			// long according to the spec. On x86_64, it's actually 64
+			// bits. Thus, casting to int64_t is either a no-op, or an
+			// up-cast which are always safe.
+			static_cast<int64_t>(p.get_last_modified()),
+			p.get_etag());
+		if (p.get_last_modified() != 0 ||
+			p.get_etag().length() > 0) {
 			LOG(Level::DEBUG,
-				"RssParser::download_http: lm = %d etag = %s",
-				p.get_last_modified(),
+				"RssParser::download_http: "
+				"lastmodified "
+				"old: %" PRId64 " new: %" PRId64,
+				// On GCC, `time_t` is `long int`, which is at least 32
+				// bits long according to the spec. On x86_64, it's
+				// actually 64 bits. Thus, casting to int64_t is either
+				// a no-op, or an up-cast which are always safe.
+				static_cast<int64_t>(lm),
+				static_cast<int64_t>(p.get_last_modified()));
+			LOG(Level::DEBUG,
+				"RssParser::download_http: etag old: "
+				"%s "
+				"new %s",
+				etag,
 				p.get_etag());
-			if (p.get_last_modified() != 0 ||
-				p.get_etag().length() > 0) {
-				LOG(Level::DEBUG,
-					"RssParser::download_http: "
-					"lastmodified "
-					"old: %d new: %d",
-					lm,
-					p.get_last_modified());
-				LOG(Level::DEBUG,
-					"RssParser::download_http: etag old: "
-					"%s "
-					"new %s",
-					etag,
-					p.get_etag());
-				ch->update_lastmodified(uri,
-					(p.get_last_modified() != lm)
-						? p.get_last_modified()
-						: 0,
-					(etag != p.get_etag()) ? p.get_etag()
-							       : "");
-			}
-			is_valid = true;
-		} catch (rsspp::Exception& e) {
-			is_valid = false;
-			throw;
+			ch->update_lastmodified(uri,
+				(p.get_last_modified() != lm)
+				? p.get_last_modified()
+				: 0,
+				(etag != p.get_etag()) ? p.get_etag()
+				: "");
 		}
 	}
 	LOG(Level::DEBUG,
-		"RssParser::parse: http URL %s, is_valid = %s",
+		"RssParser::parse: http URL %s, valid: %s",
 		uri,
-		is_valid ? "true" : "false");
+		(f.rss_version != rsspp::Feed::Version::UNKNOWN) ? "true" : "false");
 }
 
 void RssParser::get_execplugin(const std::string& plugin)
 {
 	std::string buf = utils::get_command_output(plugin);
-	is_valid = false;
-	try {
-		rsspp::Parser p;
-		f = p.parse_buffer(buf);
-		is_valid = true;
-	} catch (rsspp::Exception& e) {
-		is_valid = false;
-		throw;
-	}
+	rsspp::Parser p;
+	f = p.parse_buffer(buf);
 	LOG(Level::DEBUG,
-		"RssParser::parse: execplugin %s, is_valid = %s",
+		"RssParser::parse: execplugin %s, valid = %s",
 		plugin,
-		is_valid ? "true" : "false");
+		(f.rss_version != rsspp::Feed::Version::UNKNOWN) ? "true" : "false");
 }
 
 void RssParser::parse_file(const std::string& file)
 {
-	is_valid = false;
-	try {
-		rsspp::Parser p;
-		f = p.parse_file(file);
-		is_valid = true;
-	} catch (rsspp::Exception& e) {
-		is_valid = false;
-		throw;
-	}
+	rsspp::Parser p;
+	f = p.parse_file(file);
 	LOG(Level::DEBUG,
-		"RssParser::parse: parsed file %s, is_valid = %s",
+		"RssParser::parse: parsed file %s, valid = %s",
 		file,
-		is_valid ? "true" : "false");
+		(f.rss_version != rsspp::Feed::Version::UNKNOWN) ? "true" : "false");
 }
 
 void RssParser::download_filterplugin(const std::string& filter,
@@ -294,28 +284,22 @@ void RssParser::download_filterplugin(const std::string& filter,
 {
 	std::string buf = utils::retrieve_url(uri, cfgcont);
 
-	char* argv[4] = {const_cast<char*>("/bin/sh"),
-		const_cast<char*>("-c"),
-		const_cast<char*>(filter.c_str()),
-		nullptr};
+	const char* argv[4] = {"/bin/sh",
+			"-c",
+			filter.c_str(),
+			nullptr
+		};
 	std::string result = utils::run_program(argv, buf);
 	LOG(Level::DEBUG,
 		"RssParser::parse: output of `%s' is: %s",
 		filter,
 		result);
-	is_valid = false;
-	try {
-		rsspp::Parser p;
-		f = p.parse_buffer(result);
-		is_valid = true;
-	} catch (rsspp::Exception& e) {
-		is_valid = false;
-		throw;
-	}
+	rsspp::Parser p;
+	f = p.parse_buffer(result);
 	LOG(Level::DEBUG,
-		"RssParser::parse: filterplugin %s, is_valid = %s",
+		"RssParser::parse: filterplugin %s, valid = %s",
 		filter,
-		is_valid ? "true" : "false");
+		(f.rss_version != rsspp::Feed::Version::UNKNOWN) ? "true" : "false");
 }
 
 void RssParser::fill_feed_fields(std::shared_ptr<RssFeed> feed)
@@ -334,10 +318,11 @@ void RssParser::fill_feed_fields(std::shared_ptr<RssFeed> feed)
 
 	feed->set_link(utils::absolute_url(my_uri, f.link));
 
-	if (f.pubDate != "")
+	if (!f.pubDate.empty()) {
 		feed->set_pubDate(parse_date(f.pubDate));
-	else
+	} else {
 		feed->set_pubDate(::time(nullptr));
+	}
 
 	set_rtl(feed, f.language);
 
@@ -359,7 +344,7 @@ void RssParser::fill_feed_items(std::shared_ptr<RssFeed> feed)
 
 		set_item_title(feed, x, item);
 
-		if (item.link != "") {
+		if (!item.link.empty()) {
 			x->set_link(
 				utils::absolute_url(feed->link(), item.link));
 		}
@@ -376,9 +361,9 @@ void RssParser::fill_feed_items(std::shared_ptr<RssFeed> feed)
 		// TODO: replace this with a switch to get compiler errors when new
 		// entry is added to the enum.
 		if ((f.rss_version == rsspp::Feed::ATOM_1_0 ||
-			    f.rss_version == rsspp::Feed::TTRSS_JSON ||
-			    f.rss_version == rsspp::Feed::NEWSBLUR_JSON ||
-			    f.rss_version == rsspp::Feed::OCNEWS_JSON) &&
+				f.rss_version == rsspp::Feed::TTRSS_JSON ||
+				f.rss_version == rsspp::Feed::NEWSBLUR_JSON ||
+				f.rss_version == rsspp::Feed::OCNEWS_JSON) &&
 			item.labels.size() > 0) {
 			auto start = item.labels.begin();
 			auto finish = item.labels.end();
@@ -427,10 +412,11 @@ void RssParser::fill_feed_items(std::shared_ptr<RssFeed> feed)
 
 		set_item_content(x, item);
 
-		if (item.pubDate != "")
+		if (!item.pubDate.empty()) {
 			x->set_pubDate(parse_date(item.pubDate));
-		else
+		} else {
 			x->set_pubDate(::time(nullptr));
+		}
 
 		x->set_guid(get_guid(item));
 
@@ -441,11 +427,15 @@ void RssParser::fill_feed_items(std::shared_ptr<RssFeed> feed)
 		LOG(Level::DEBUG,
 			"RssParser::parse: item title = `%s' link = `%s' "
 			"pubDate "
-			"= `%s' (%d) description = `%s'",
+			"= `%s' (%" PRId64 ") description = `%s'",
 			x->title(),
 			x->link(),
 			x->pubDate(),
-			x->pubDate_timestamp(),
+			// On GCC, `time_t` is `long int`, which is at least 32 bits long
+			// according to the spec. On x86_64, it's actually 64 bits. Thus,
+			// casting to int64_t is either a no-op, or an up-cast which are
+			// always safe.
+			static_cast<int64_t>(x->pubDate_timestamp()),
 			x->description());
 
 		add_item_to_feed(feed, x);
@@ -477,10 +467,10 @@ void RssParser::set_item_author(std::shared_ptr<RssItem> x,
 	 * some feeds only have a feed-wide managingEditor, which we use as an
 	 * item's author if there is no item-specific one available.
 	 */
-	if (item.author == "") {
-		if (f.managingeditor != "")
+	if (item.author.empty()) {
+		if (!f.managingeditor.empty()) {
 			x->set_author(f.managingeditor);
-		else {
+		} else {
 			x->set_author(f.dc_creator);
 		}
 	} else {
@@ -495,21 +485,21 @@ void RssParser::set_item_content(std::shared_ptr<RssItem> x,
 
 	handle_itunes_summary(x, item);
 
-	if (x->description() == "") {
+	if (x->description().empty()) {
 		x->set_description(item.description);
 	} else {
 		if (cfgcont->get_configvalue_as_bool(
-			    "always-display-description") &&
-			item.description != "")
+				"always-display-description") &&
+			!item.description.empty())
 			x->set_description(
 				x->description() + "<hr>" + item.description);
 	}
 
 	/* if it's still empty and we shall download the full page, then we do
 	 * so. */
-	if (x->description() == "" &&
+	if (x->description().empty() &&
 		cfgcont->get_configvalue_as_bool("download-full-page") &&
-		x->link() != "") {
+		!x->link().empty()) {
 		x->set_description(utils::retrieve_url(x->link(), cfgcont));
 	}
 
@@ -527,16 +517,17 @@ std::string RssParser::get_guid(const rsspp::Item& item) const
 	 * is suboptimal, of course, because it makes it impossible to recognize
 	 * duplicates when the title or the link changes.
 	 */
-	if (item.guid != "")
+	if (!item.guid.empty()) {
 		return item.guid;
-	else if (item.link != "" && item.pubDate != "")
+	} else if (!item.link.empty() && !item.pubDate.empty()) {
 		return item.link + item.pubDate;
-	else if (item.link != "")
+	} else if (!item.link.empty()) {
 		return item.link;
-	else if (item.title != "")
+	} else if (!item.title.empty()) {
 		return item.title;
-	else
-		return ""; // too bad.
+	} else {
+		return "";        // too bad.
+	}
 }
 
 void RssParser::set_item_enclosure(std::shared_ptr<RssItem> x,
@@ -579,12 +570,13 @@ void RssParser::add_item_to_feed(std::shared_ptr<RssFeed> feed,
 void RssParser::handle_content_encoded(std::shared_ptr<RssItem> x,
 	const rsspp::Item& item) const
 {
-	if (x->description() != "")
+	if (!x->description().empty()) {
 		return;
+	}
 
 	/* here we handle content:encoded tags that are an extension but very
 	 * widespread */
-	if (item.content_encoded != "") {
+	if (!item.content_encoded.empty()) {
 		x->set_description(item.content_encoded);
 	} else {
 		LOG(Level::DEBUG,
@@ -595,11 +587,12 @@ void RssParser::handle_content_encoded(std::shared_ptr<RssItem> x,
 void RssParser::handle_itunes_summary(std::shared_ptr<RssItem> x,
 	const rsspp::Item& item)
 {
-	if (x->description() != "")
+	if (!x->description().empty()) {
 		return;
+	}
 
 	std::string summary = item.itunes_summary;
-	if (summary != "") {
+	if (!summary.empty()) {
 		std::string desc = "<ituneshack>";
 		desc.append(summary);
 		desc.append("</ituneshack>");
@@ -610,7 +603,7 @@ void RssParser::handle_itunes_summary(std::shared_ptr<RssItem> x,
 bool RssParser::is_html_type(const std::string& type)
 {
 	return (type == "html" || type == "xhtml" ||
-		type == "application/xhtml+xml");
+			type == "application/xhtml+xml");
 }
 
 void RssParser::fetch_ttrss(const std::string& feed_id)
@@ -618,12 +611,11 @@ void RssParser::fetch_ttrss(const std::string& feed_id)
 	TtRssApi* tapi = dynamic_cast<TtRssApi*>(api);
 	if (tapi) {
 		f = tapi->fetch_feed(
-			feed_id, easyhandle ? easyhandle->ptr() : nullptr);
-		is_valid = true;
+				feed_id, easyhandle ? easyhandle->ptr() : nullptr);
 	}
 	LOG(Level::DEBUG,
-		"RssParser::fetch_ttrss: f.items.size = %u",
-		f.items.size());
+		"RssParser::fetch_ttrss: f.items.size = %" PRIu64,
+		static_cast<uint64_t>(f.items.size()));
 }
 
 void RssParser::fetch_newsblur(const std::string& feed_id)
@@ -631,11 +623,10 @@ void RssParser::fetch_newsblur(const std::string& feed_id)
 	NewsBlurApi* napi = dynamic_cast<NewsBlurApi*>(api);
 	if (napi) {
 		f = napi->fetch_feed(feed_id);
-		is_valid = true;
 	}
 	LOG(Level::INFO,
-		"RssParser::fetch_newsblur: f.items.size = %u",
-		f.items.size());
+		"RssParser::fetch_newsblur: f.items.size = %" PRIu64,
+		static_cast<uint64_t>(f.items.size()));
 }
 
 void RssParser::fetch_ocnews(const std::string& feed_id)
@@ -643,11 +634,10 @@ void RssParser::fetch_ocnews(const std::string& feed_id)
 	OcNewsApi* napi = dynamic_cast<OcNewsApi*>(api);
 	if (napi) {
 		f = napi->fetch_feed(feed_id);
-		is_valid = true;
 	}
 	LOG(Level::INFO,
-		"RssParser::fetch_ocnews: f.items.size = %u",
-		f.items.size());
+		"RssParser::fetch_ocnews: f.items.size = %" PRIu64,
+		static_cast<uint64_t>(f.items.size()));
 }
 
 } // namespace newsboat

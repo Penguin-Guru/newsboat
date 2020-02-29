@@ -1,0 +1,169 @@
+= NEWSBOAT(1)
+Alexander Batischev <eual.jp@gmail.com>
+
+
+== NAME
+
+newsboat - an RSS/Atom feed reader for text terminals
+
+
+== SYNOPSIS
+
+*newsboat* [-r] [-e] [-i opmlfile] [-u urlfile] [-c cachefile] [-C configfile] [-X] [-o] [-x <command> ...] [-h]
+
+
+== DESCRIPTION
+
+_newsboat_ is an RSS/Atom feed reader for text terminals. RSS and Atom are a
+number of widely-used XML formats to transmit, publish and syndicate articles, 
+for example news or blog articles.  Newsboat is designed to be used on text 
+terminals on Unix or Unix-like systems such as GNU/Linux, BSD or Mac OS X.
+
+
+== OPTIONS
+
+-h, --help::
+        Display help
+
+-r, --refresh-on-start::
+        Refresh feeds on start
+
+-e, --export-to-opml::
+        Export feeds as OPML to stdout
+
+-X, --vacuum::
+        Compact the cache by: 1) reclaiming the space that was left empty when
+        data was deleted; and 2) defragmenting the entries in the cache. This
+        *doesn't* delete the entries; for that, see _cleanup-on-quit_,
+        _delete-read-articles-on-quit_, _keep-articles-days_, and _max-items_
+        settings.
+
+-v, -V, --version::
+        Get version information about newsboat and the libraries it uses
+
+-i opmlfile, --import-from-opml=opmlfile::
+       Import an OPML file
+
+-u urlfile, --url-file=urlfile::
+       Use an alternative URL file
+
+-c cachefile, --cache-file=cachefile::
+       Use an alternative cache file
+
+-C configfile, --config-file=configfile::
+       Use an alternative configuration file
+
+-x command ..., --execute=command...::
+       Execute one or more commands to run newsboat unattended. Currently available
+       commands are "reload" and "print-unread".
+
+-l loglevel, --log-level=loglevel::
+       Generate a logfile with a certain loglevel. Valid loglevels are 1 to 6. An
+       actual logfile will only be written when you provide a logfile name.
+
+-d logfile, --log-file=logfile::
+       Use this logfile as output when logging debug messages. Please note that this
+       only works when providing a loglevel.
+
+-E file, --export-to-file=file::
+       Export a list of read articles (resp. their GUIDs). This can be used to
+       transfer information about read articles between different computers.
+
+-I file, --import-from-file=file::
+      Import a list of read articles and mark them as read if they are held in the
+      cache. This is to be used in conjunction with the -E commandline parameter.
+
+== FIRST STEPS
+
+include::chapter-firststeps.asciidoc[]
+
+== CONFIGURATION COMMANDS
+
+include::newsboat-cfgcmds.asciidoc[]
+
+
+== AVAILABLE OPERATIONS
+
+include::newsboat-keycmds.asciidoc[]
+
+
+== TAGGING
+
+include::chapter-tagging.asciidoc[]
+
+
+== SCRIPTS AND FILTERS
+
+include::chapter-snownews.asciidoc[]
+
+
+== COMMAND LINE
+
+include::chapter-cmdline.asciidoc[]
+
+_quit_::
+        Quit newsboat
+_q_::
+        Alias for _quit_
+
+_save_ <filename>::
+        Save current article to <filename>
+
+[[cmd-set]] _set_ <variable>[=<value>|&|!]::
+        Set (or get) configuration variable value. Specifying a _!_ after the name of a boolean configuration variable toggles their values, a _&_ directly after the name of a configuration variable of any type resets its value to the documented default value.
+
+_tag_ <tagname>::
+        Select a certain tag
+
+_goto_ <case-insensitive substring>::
+        Go to the next feed whose name contains the case-insensitive substring.
+
+_source_ <filename> [...]::
+        Load the specified configuration files. This allows it to load alternative configuration files or reload already loaded configuration files on-the-fly from the filesystem.
+
+_dumpconfig_ <filename>::
+       Save current internal state of configuration to file, so that it can be instantly reused as configuration file.
+
+_<number>_::
+        Jump to the <number>th entry in the current dialog
+
+
+== XDG Base Directory Support
+
+Newsboat defaults to storing everything in _$HOME/.newsboat_ directory. If
+you prefer XDG, create _$HOME/.config/newsboat_ and
+_$HOME/.local/share/newsboat_ directories, and Newsboat will use them
+from there on.
+
+If you already have some files in _$HOME/.newsboat/_, move them as follows:
+
+_config_, _urls_::
+        to _$HOME/.config/newsboat/_
+
+_cache.db_, _history.search_, _history.cmdline_::
+        to _$HOME/.local/share/newsboat/_
+
+See also a corresponding section in podboat(1).
+
+
+== FILES
+
+dotfiles::
+        _$HOME/.newsboat/config_
++
+_$HOME/.newsboat/urls_
+
+XDG::
+        _$HOME/.config/newsboat/config_
++
+_$HOME/.config/newsboat/urls_
+
+
+== ENVIRONMENT
+
+include::chapter-environment-variables.asciidoc[]
+
+
+== SEE ALSO
+
+podboat(1)

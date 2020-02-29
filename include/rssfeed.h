@@ -33,11 +33,10 @@ public:
 		utils::trim(title_);
 	}
 
-	std::string description_raw() const
+	std::string description() const
 	{
 		return description_;
 	}
-	std::string description() const;
 	void set_description(const std::string& d)
 	{
 		description_ = d;
@@ -201,10 +200,12 @@ public:
 
 	void reset_status()
 	{
+		std::lock_guard<std::mutex> guard(status_mutex_);
 		status_ = DlStatus::TO_BE_DOWNLOADED;
 	}
 	void set_status(DlStatus st)
 	{
+		std::lock_guard<std::mutex> guard(status_mutex_);
 		status_ = st;
 	}
 
@@ -213,8 +214,9 @@ public:
 
 	void mark_all_items_read();
 
-	std::mutex item_mutex; // this is ugly, but makes it possible to lock
-			       // items use e.g. from the Cache class
+	// this is ugly, but makes it possible to lock items use e.g. from the Cache class
+	std::mutex item_mutex;
+
 private:
 	std::string title_;
 	std::string description_;
@@ -234,8 +236,10 @@ private:
 	bool is_rtl_;
 	unsigned int idx;
 	unsigned int order;
-	DlStatus status_;
 	std::mutex items_guid_map_mutex;
+
+	DlStatus status_;
+	std::mutex status_mutex_;
 };
 
 } // namespace newsboat

@@ -22,10 +22,12 @@ enum { KM_FEEDLIST = 1 << 0,
 	KM_SYSKEYS = 1 << 9,
 	KM_INTERNAL = 1 << 10,
 	KM_DIALOGS = 1 << 11,
+	KM_DIRBROWSER = 1 << 12,
 	KM_NEWSBOAT = KM_FEEDLIST | KM_FILEBROWSER | KM_HELP | KM_ARTICLELIST |
 		KM_ARTICLE | KM_TAGSELECT | KM_FILTERSELECT | KM_URLVIEW |
-		KM_DIALOGS,
-	KM_BOTH = KM_NEWSBOAT | KM_PODBOAT };
+		KM_DIALOGS | KM_DIRBROWSER,
+	KM_BOTH = KM_NEWSBOAT | KM_PODBOAT
+};
 
 namespace newsboat {
 
@@ -42,6 +44,7 @@ enum Operation {
 	OP_MARKALLABOVEASREAD,
 	OP_OPEN,
 	OP_SAVE,
+	OP_SAVEALL,
 	OP_NEXTUNREAD,
 	OP_PREVUNREAD,
 	OP_NEXT,
@@ -179,6 +182,7 @@ public:
 
 private:
 	bool is_valid_context(const std::string& context);
+	std::map<std::string, Operation> get_internal_operations() const;
 	std::string getopname(Operation op);
 	std::map<std::string, std::map<std::string, Operation>> keymap_;
 	std::map<std::string, std::vector<MacroCmd>> macros_;

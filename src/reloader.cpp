@@ -1,6 +1,7 @@
 #include "reloader.h"
 
 #include <algorithm>
+#include <cinttypes>
 #include <iostream>
 #include <ncurses.h>
 #include <thread>
@@ -60,6 +61,14 @@ void Reloader::reload(unsigned int pos,
 	if (pos < ctrl->get_feedcontainer()->feeds.size()) {
 		std::shared_ptr<RssFeed> oldfeed =
 			ctrl->get_feedcontainer()->feeds[pos];
+
+		// Query feed reloading should be handled by the calling functions
+		// (e.g.  Reloader::reload_all() calling View::prepare_query_feed())
+		if (oldfeed->is_query_feed()) {
+			LOG(Level::DEBUG, "Reloader::reload: skipping query feed");
+			return;
+		}
+
 		std::string errmsg;
 		if (!unattended) {
 			ctrl->get_view()->set_status(
@@ -68,7 +77,7 @@ void Reloader::reload(unsigned int pos,
 					utils::censor_url(oldfeed->rssurl())));
 		}
 
-		bool ignore_dl =
+		const bool ignore_dl =
 			(cfg->get_configvalue("ignore-mode") == "download");
 
 		RssParser parser(oldfeed->rssurl(),
@@ -81,32 +90,33 @@ void Reloader::reload(unsigned int pos,
 		try {
 			oldfeed->set_status(DlStatus::DURING_DOWNLOAD);
 			std::shared_ptr<RssFeed> newfeed = parser.parse();
-			if (newfeed->total_item_count() > 0) {
+			if (newfeed != nullptr) {
 				ctrl->replace_feed(
 					oldfeed, newfeed, pos, unattended);
-			} else {
-				LOG(Level::DEBUG,
-					"Reloader::reload: feed is empty");
+				if (newfeed->total_item_count() == 0) {
+					LOG(Level::DEBUG,
+						"Reloader::reload: feed is empty");
+				}
 			}
 			oldfeed->set_status(DlStatus::SUCCESS);
 			ctrl->get_view()->set_status("");
 		} catch (const DbException& e) {
 			errmsg = strprintf::fmt(
-				_("Error while retrieving %s: %s"),
-				utils::censor_url(oldfeed->rssurl()),
-				e.what());
+					_("Error while retrieving %s: %s"),
+					utils::censor_url(oldfeed->rssurl()),
+					e.what());
 		} catch (const std::string& emsg) {
 			errmsg = strprintf::fmt(
-				_("Error while retrieving %s: %s"),
-				utils::censor_url(oldfeed->rssurl()),
-				emsg);
+					_("Error while retrieving %s: %s"),
+					utils::censor_url(oldfeed->rssurl()),
+					emsg);
 		} catch (rsspp::Exception& e) {
 			errmsg = strprintf::fmt(
-				_("Error while retrieving %s: %s"),
-				utils::censor_url(oldfeed->rssurl()),
-				e.what());
+					_("Error while retrieving %s: %s"),
+					utils::censor_url(oldfeed->rssurl()),
+					e.what());
 		}
-		if (errmsg != "") {
+		if (!errmsg.empty()) {
 			oldfeed->set_status(DlStatus::DL_ERROR);
 			ctrl->get_view()->set_status(errmsg);
 			LOG(Level::USERERROR, "%s", errmsg);
@@ -148,16 +158,16 @@ void Reloader::reload_all(bool unattended)
 		reload_range(0, num_feeds - 1, num_feeds, unattended);
 	} else {
 		std::vector<std::pair<unsigned int, unsigned int>> partitions =
-			utils::partition_indexes(0, num_feeds - 1, num_threads);
+				utils::partition_indexes(0, num_feeds - 1, num_threads);
 		std::vector<std::thread> threads;
 		LOG(Level::DEBUG,
 			"Reloader::reload_all: starting reload threads...");
 		for (int i = 0; i < num_threads - 1; i++) {
 			threads.push_back(std::thread(ReloadRangeThread(*this,
-				partitions[i].first,
-				partitions[i].second,
-				num_feeds,
-				unattended)));
+						partitions[i].first,
+						partitions[i].second,
+						num_feeds,
+						unattended)));
 		}
 		LOG(Level::DEBUG,
 			"Reloader::reload_all: starting my own reload...");
@@ -175,7 +185,10 @@ void Reloader::reload_all(bool unattended)
 	// refresh query feeds (update and sort)
 	LOG(Level::DEBUG, "Reloader::reload_all: refresh query feeds");
 	for (const auto& feed : ctrl->get_feedcontainer()->feeds) {
-		ctrl->get_view()->prepare_query_feed(feed);
+		if (feed->is_query_feed()) {
+			ctrl->get_view()->prepare_query_feed(feed);
+			feed->set_status(DlStatus::SUCCESS);
+		}
 	}
 	ctrl->get_view()->force_redraw();
 
@@ -184,7 +197,12 @@ void Reloader::reload_all(bool unattended)
 
 	t2 = time(nullptr);
 	dt = t2 - t1;
-	LOG(Level::INFO, "Reloader::reload_all: reload took %d seconds", dt);
+	// On GCC, `time_t` is `long int`, which is at least 32 bits. On x86_64,
+	// it's 64 bits. Thus, this cast is either a no-op, or an up-cast which are
+	// always safe.
+	LOG(Level::INFO,
+		"Reloader::reload_all: reload took %" PRId64 " seconds",
+		static_cast<int64_t>(dt));
 
 	const auto unread_feeds2 =
 		ctrl->get_feedcontainer()->unread_feed_count();

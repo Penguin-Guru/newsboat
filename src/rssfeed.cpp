@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cerrno>
+#include <cinttypes>
 #include <cstring>
 #include <curl/curl.h>
 #include <functional>
@@ -47,18 +48,18 @@ unsigned int RssFeed::unread_item_count()
 {
 	std::lock_guard<std::mutex> lock(item_mutex);
 	return std::count_if(items_.begin(),
-		items_.end(),
-		[](const std::shared_ptr<RssItem>& item) {
-			return item->unread();
-		});
+			items_.end(),
+	[](const std::shared_ptr<RssItem>& item) {
+		return item->unread();
+	});
 }
 
 bool RssFeed::matches_tag(const std::string& tag)
 {
 	return std::find_if(
-		       tags_.begin(), tags_.end(), [&](const std::string& t) {
-			       return tag == t;
-		       }) != tags_.end();
+	tags_.begin(), tags_.end(), [&](const std::string& t) {
+		return tag == t;
+	}) != tags_.end();
 }
 
 std::string RssFeed::get_firsttag()
@@ -96,19 +97,16 @@ std::string RssFeed::title() const
 	}
 	return found_title
 		? alt_title
-		: utils::convert_text(title_, nl_langinfo(CODESET), "utf-8");
-}
-
-std::string RssFeed::description() const
-{
-	return utils::convert_text(description_, nl_langinfo(CODESET), "utf-8");
+		: utils::utf8_to_locale(title_);
 }
 
 bool RssFeed::hidden() const
 {
 	return std::any_of(tags_.begin(),
-		tags_.end(),
-		[](const std::string& tag) { return tag.substr(0, 1) == "!"; });
+			tags_.end(),
+	[](const std::string& tag) {
+		return tag.substr(0, 1) == "!";
+	});
 }
 
 std::shared_ptr<RssItem> RssFeed::get_item_by_guid(const std::string& guid)
@@ -127,11 +125,11 @@ std::shared_ptr<RssItem> RssFeed::get_item_by_guid_unlocked(
 	LOG(Level::DEBUG,
 		"RssFeed::get_item_by_guid_unlocked: hit dummy item!");
 	LOG(Level::DEBUG,
-		"RssFeed::get_item_by_guid_unlocked: items_guid_map.size = %d",
-		items_guid_map.size());
-	// abort();
-	return std::shared_ptr<RssItem>(
-		new RssItem(ch)); // should never happen!
+		"RssFeed::get_item_by_guid_unlocked: items_guid_map.size = %" PRIu64,
+		static_cast<uint64_t>(items_guid_map.size()));
+
+	// should never happen!
+	return std::shared_ptr<RssItem>(new RssItem(ch));
 }
 
 bool RssFeed::has_attribute(const std::string& attribname)
@@ -140,24 +138,25 @@ bool RssFeed::has_attribute(const std::string& attribname)
 		attribname == "feedlink" || attribname == "feeddate" ||
 		attribname == "rssurl" || attribname == "unread_count" ||
 		attribname == "total_count" || attribname == "tags" ||
-		attribname == "feedindex")
+		attribname == "feedindex") {
 		return true;
+	}
 	return false;
 }
 
 std::string RssFeed::get_attribute(const std::string& attribname)
 {
-	if (attribname == "feedtitle")
+	if (attribname == "feedtitle") {
 		return title();
-	else if (attribname == "description")
-		return description();
-	else if (attribname == "feedlink")
+	} else if (attribname == "description") {
+		return utils::utf8_to_locale(description());
+	} else if (attribname == "feedlink") {
 		return title();
-	else if (attribname == "feeddate")
+	} else if (attribname == "feeddate") {
 		return pubDate();
-	else if (attribname == "rssurl")
+	} else if (attribname == "rssurl") {
 		return rssurl();
-	else if (attribname == "unread_count") {
+	} else if (attribname == "unread_count") {
 		return std::to_string(unread_item_count());
 	} else if (attribname == "total_count") {
 		return std::to_string(items_.size());
@@ -261,80 +260,75 @@ void RssFeed::sort_unlocked(const ArticleSortStrategy& sort_strategy)
 	case ArtSortMethod::TITLE:
 		std::stable_sort(items_.begin(),
 			items_.end(),
-			[&](std::shared_ptr<RssItem> a,
-				std::shared_ptr<RssItem> b) {
-				return sort_strategy.sd ==
-						SortDirection::DESC
-					? (utils::strnaturalcmp(a->title().c_str(),
-						   b->title().c_str()) > 0)
-					: (utils::strnaturalcmp(a->title().c_str(),
-						   b->title().c_str()) < 0);
-			});
+			[&](const std::shared_ptr<RssItem>& a,
+		const std::shared_ptr<RssItem>& b) {
+			const auto cmp = utils::strnaturalcmp(utils::utf8_to_locale(a->title()),
+					utils::utf8_to_locale(b->title()));
+			return sort_strategy.sd == SortDirection::DESC ? (cmp > 0) : (cmp < 0);
+		});
 		break;
 	case ArtSortMethod::FLAGS:
 		std::stable_sort(items_.begin(),
 			items_.end(),
-			[&](std::shared_ptr<RssItem> a,
-				std::shared_ptr<RssItem> b) {
-				return sort_strategy.sd ==
-						SortDirection::DESC
-					? (strcmp(a->flags().c_str(),
-						   b->flags().c_str()) > 0)
-					: (strcmp(a->flags().c_str(),
-						   b->flags().c_str()) < 0);
-			});
+			[&](const std::shared_ptr<RssItem>& a,
+		const std::shared_ptr<RssItem>& b) {
+			return sort_strategy.sd ==
+				SortDirection::DESC
+				? (strcmp(a->flags().c_str(),
+						b->flags().c_str()) > 0)
+				: (strcmp(a->flags().c_str(),
+						b->flags().c_str()) < 0);
+		});
 		break;
 	case ArtSortMethod::AUTHOR:
 		std::stable_sort(items_.begin(),
 			items_.end(),
-			[&](std::shared_ptr<RssItem> a,
-				std::shared_ptr<RssItem> b) {
-				return sort_strategy.sd ==
-						SortDirection::DESC
-					? (strcmp(a->author().c_str(),
-						   b->author().c_str()) > 0)
-					: (strcmp(a->author().c_str(),
-						   b->author().c_str()) < 0);
-			});
+			[&](const std::shared_ptr<RssItem>& a,
+		const std::shared_ptr<RssItem>& b) {
+			const auto author_a = utils::utf8_to_locale(a->author());
+			const auto author_b = utils::utf8_to_locale(b->author());
+			const auto cmp = strcmp(author_a.c_str(), author_b.c_str());
+			return sort_strategy.sd == SortDirection::DESC ? (cmp > 0) : (cmp < 0);
+		});
 		break;
 	case ArtSortMethod::LINK:
 		std::stable_sort(items_.begin(),
 			items_.end(),
-			[&](std::shared_ptr<RssItem> a,
-				std::shared_ptr<RssItem> b) {
-				return sort_strategy.sd ==
-						SortDirection::DESC
-					? (strcmp(a->link().c_str(),
-						   b->link().c_str()) > 0)
-					: (strcmp(a->link().c_str(),
-						   b->link().c_str()) < 0);
-			});
+			[&](const std::shared_ptr<RssItem>& a,
+		const std::shared_ptr<RssItem>& b) {
+			return sort_strategy.sd ==
+				SortDirection::DESC
+				? (strcmp(a->link().c_str(),
+						b->link().c_str()) > 0)
+				: (strcmp(a->link().c_str(),
+						b->link().c_str()) < 0);
+		});
 		break;
 	case ArtSortMethod::GUID:
 		std::stable_sort(items_.begin(),
 			items_.end(),
-			[&](std::shared_ptr<RssItem> a,
-				std::shared_ptr<RssItem> b) {
-				return sort_strategy.sd ==
-						SortDirection::DESC
-					? (strcmp(a->guid().c_str(),
-						   b->guid().c_str()) > 0)
-					: (strcmp(a->guid().c_str(),
-						   b->guid().c_str()) < 0);
-			});
+			[&](const std::shared_ptr<RssItem>& a,
+		const std::shared_ptr<RssItem>& b) {
+			return sort_strategy.sd ==
+				SortDirection::DESC
+				? (strcmp(a->guid().c_str(),
+						b->guid().c_str()) > 0)
+				: (strcmp(a->guid().c_str(),
+						b->guid().c_str()) < 0);
+		});
 		break;
 	case ArtSortMethod::DATE:
 		std::stable_sort(items_.begin(),
 			items_.end(),
-			[&](std::shared_ptr<RssItem> a,
-				std::shared_ptr<RssItem> b) {
-				// date is descending by default
-				return sort_strategy.sd == SortDirection::ASC
-					? (a->pubDate_timestamp() >
-						  b->pubDate_timestamp())
-					: (a->pubDate_timestamp() <
-						  b->pubDate_timestamp());
-			});
+			[&](const std::shared_ptr<RssItem>& a,
+		const std::shared_ptr<RssItem>& b) {
+			// date is descending by default
+			return sort_strategy.sd == SortDirection::ASC
+				? (a->pubDate_timestamp() >
+					b->pubDate_timestamp())
+				: (a->pubDate_timestamp() <
+					b->pubDate_timestamp());
+		});
 		break;
 	case ArtSortMethod::RANDOM:
 		std::random_shuffle(items_.begin(), items_.end());
@@ -358,11 +352,11 @@ void RssFeed::purge_deleted_items()
 	}
 
 	items_.erase(std::remove_if(items_.begin(),
-			     items_.end(),
-			     [](const std::shared_ptr<RssItem> item) {
-				     return item->deleted();
-			     }),
-		items_.end());
+			items_.end(),
+	[](const std::shared_ptr<RssItem> item) {
+		return item->deleted();
+	}),
+	items_.end());
 }
 
 void RssFeed::set_feedptrs(std::shared_ptr<RssFeed> self)
@@ -375,6 +369,8 @@ void RssFeed::set_feedptrs(std::shared_ptr<RssFeed> self)
 
 std::string RssFeed::get_status()
 {
+	std::lock_guard<std::mutex> guard(status_mutex_);
+
 	switch (status_) {
 	case DlStatus::SUCCESS:
 		return " ";

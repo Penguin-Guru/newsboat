@@ -1,6 +1,7 @@
 #include "utils.h"
 
 #include <algorithm>
+#include <cinttypes>
 #include <cmath>
 #include <cstdarg>
 #include <cstdio>
@@ -12,7 +13,6 @@
 #include <fcntl.h>
 #include <iconv.h>
 #include <langinfo.h>
-#include <libgen.h>
 #include <libxml/uri.h>
 #include <locale>
 #include <mutex>
@@ -21,13 +21,11 @@
 #include <sstream>
 #include <stfl.h>
 #include <sys/param.h>
-#include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/utsname.h>
 #include <unistd.h>
 #include <unordered_set>
 
-#include "3rd-party/alphanum.hpp"
 #include "config.h"
 #include "logger.h"
 #include "strprintf.h"
@@ -72,7 +70,7 @@ void append_escapes(std::string& str, char c)
 	case '\\':
 		break;
 	default:
-		str.append(1, c);
+		str.push_back(c);
 		break;
 	}
 }
@@ -80,14 +78,7 @@ void append_escapes(std::string& str, char c)
 
 std::string utils::strip_comments(const std::string& line)
 {
-	/*
-	 * This functions returns only the non-comment part of the line,
-	 * which can then be safely evaluated and tokenized.
-	 *
-	 * If no comments are present on the line, the whole line is returned.
-	 */
-	auto hash_pos = line.find_first_of("#");
-	return line.substr(0, hash_pos);
+	return RustString(rs_strip_comments(line.c_str()));
 }
 
 std::vector<std::string> utils::tokenize_quoted(const std::string& str,
@@ -121,8 +112,9 @@ std::vector<std::string> utils::tokenize_quoted(const std::string& str,
 	std::string::size_type pos = last_pos;
 
 	while (pos != std::string::npos && last_pos != std::string::npos) {
-		if (str[last_pos] == '#') // stop as soon as we found a comment
+		if (str[last_pos] == '#') { // stop as soon as we found a comment
 			break;
+		}
 
 		if (str[last_pos] == '"') {
 			++last_pos;
@@ -155,8 +147,7 @@ std::vector<std::string> utils::tokenize_quoted(const std::string& str,
 							append_escapes(token,
 								str[last_pos]);
 						} else {
-							token.append(1,
-								str[last_pos]);
+							token.push_back(str[last_pos]);
 						}
 					}
 					++last_pos;
@@ -179,8 +170,7 @@ std::vector<std::string> utils::tokenize_quoted(const std::string& str,
 							append_escapes(token,
 								str[last_pos]);
 						} else {
-							token.append(1,
-								str[last_pos]);
+							token.push_back(str[last_pos]);
 						}
 					}
 					++last_pos;
@@ -248,15 +238,17 @@ std::vector<std::string> utils::tokenize_spaced(const std::string& str,
 	while (std::string::npos != pos || std::string::npos != last_pos) {
 		tokens.push_back(str.substr(last_pos, pos - last_pos));
 		last_pos = str.find_first_not_of(delimiters, pos);
-		if (last_pos > pos)
+		if (last_pos > pos) {
 			tokens.push_back(str.substr(pos, last_pos - pos));
+		}
 		pos = str.find_first_of(delimiters, last_pos);
 	}
 
 	return tokens;
 }
 
-std::string utils::consolidate_whitespace(const std::string& str) {
+std::string utils::consolidate_whitespace(const std::string& str)
+{
 
 	return RustString(rs_consolidate_whitespace(str.c_str()));
 }
@@ -269,7 +261,9 @@ std::vector<std::string> utils::tokenize_nl(const std::string& str,
 	std::string::size_type pos = str.find_first_of(delimiters, last_pos);
 	unsigned int i;
 
-	LOG(Level::DEBUG, "utils::tokenize_nl: last_pos = %u", last_pos);
+	LOG(Level::DEBUG,
+		"utils::tokenize_nl: last_pos = %" PRIu64,
+		static_cast<uint64_t>(last_pos));
 	if (last_pos != std::string::npos) {
 		for (i = 0; i < last_pos; ++i) {
 			tokens.push_back(std::string("\n"));
@@ -283,8 +277,8 @@ std::vector<std::string> utils::tokenize_nl(const std::string& str,
 			str.substr(last_pos, pos - last_pos));
 		last_pos = str.find_first_not_of(delimiters, pos);
 		LOG(Level::DEBUG,
-			"utils::tokenize_nl: pos - last_pos = %u",
-			last_pos - pos);
+			"utils::tokenize_nl: pos - last_pos = %" PRIu64,
+			static_cast<uint64_t>(last_pos - pos));
 		for (i = 0; last_pos != std::string::npos &&
 			pos != std::string::npos && i < (last_pos - pos);
 			++i) {
@@ -306,17 +300,18 @@ std::string utils::translit(const std::string& tocode,
 	static TranslitState state = TranslitState::UNKNOWN;
 
 	// TRANSLIT is not needed when converting to unicode encodings
-	if (tocode == "utf-8" || tocode == "WCHAR_T")
+	if (tocode == "utf-8" || tocode == "WCHAR_T") {
 		return tocode;
+	}
 
 	if (state == TranslitState::UNKNOWN) {
 		iconv_t cd = ::iconv_open(
-			(tocode + "//TRANSLIT").c_str(), fromcode.c_str());
+				(tocode + "//TRANSLIT").c_str(), fromcode.c_str());
 
 		if (cd == reinterpret_cast<iconv_t>(-1)) {
 			if (errno == EINVAL) {
 				iconv_t cd = ::iconv_open(
-					tocode.c_str(), fromcode.c_str());
+						tocode.c_str(), fromcode.c_str());
 				if (cd != reinterpret_cast<iconv_t>(-1)) {
 					state = TranslitState::UNSUPPORTED;
 				} else {
@@ -345,7 +340,7 @@ std::string utils::translit(const std::string& tocode,
 	}
 
 	return ((state == TranslitState::SUPPORTED) ? (tocode + tlit)
-						     : (tocode));
+			: (tocode));
 }
 
 std::string utils::convert_text(const std::string& text,
@@ -354,14 +349,16 @@ std::string utils::convert_text(const std::string& text,
 {
 	std::string result;
 
-	if (strcasecmp(tocode.c_str(), fromcode.c_str()) == 0)
+	if (strcasecmp(tocode.c_str(), fromcode.c_str()) == 0) {
 		return text;
+	}
 
 	iconv_t cd = ::iconv_open(
-		translit(tocode, fromcode).c_str(), fromcode.c_str());
+			translit(tocode, fromcode).c_str(), fromcode.c_str());
 
-	if (cd == reinterpret_cast<iconv_t>(-1))
+	if (cd == reinterpret_cast<iconv_t>(-1)) {
 		return result;
+	}
 
 	size_t inbytesleft;
 	size_t outbytesleft;
@@ -382,13 +379,13 @@ std::string utils::convert_text(const std::string& text,
 
 	outbytesleft = sizeof(outbuf);
 	inbufp = const_cast<char*>(
-		text.c_str()); // evil, but spares us some trouble
+			text.c_str()); // evil, but spares us some trouble
 	inbytesleft = strlen(inbufp);
 
 	do {
 		char* old_outbufp = outbufp;
 		int rc = ::iconv(
-			cd, &inbufp, &inbytesleft, &outbufp, &outbytesleft);
+				cd, &inbufp, &inbytesleft, &outbufp, &outbytesleft);
 		if (-1 == rc) {
 			switch (errno) {
 			case E2BIG:
@@ -420,6 +417,15 @@ std::string utils::convert_text(const std::string& text,
 	return result;
 }
 
+std::string utils::utf8_to_locale(const std::string& text)
+{
+	if (text.empty()) {
+		return {};
+	}
+
+	return utils::convert_text(text, nl_langinfo(CODESET), "utf-8");
+}
+
 std::string utils::get_command_output(const std::string& cmd)
 {
 	return RustString(rs_get_command_output(cmd.c_str()));
@@ -429,20 +435,14 @@ void utils::extract_filter(const std::string& line,
 	std::string& filter,
 	std::string& url)
 {
-	std::string::size_type pos = line.find_first_of(":", 0);
-	std::string::size_type pos1 = line.find_first_of(":", pos + 1);
-	filter = line.substr(pos + 1, pos1 - pos - 1);
-	pos = pos1;
-	url = line.substr(pos + 1, line.length() - pos);
-	LOG(Level::DEBUG,
-		"utils::extract_filter: %s -> filter: %s url: %s",
-		line,
-		filter,
-		url);
+	FilterUrl filterUrl = rs_extract_filter(line.c_str());
+
+	filter = RustString(filterUrl.filter);
+	url = RustString(filterUrl.url);
 }
 
-static size_t
-my_write_data(void* buffer, size_t size, size_t nmemb, void* userp)
+static size_t my_write_data(void* buffer, size_t size, size_t nmemb,
+	void* userp)
 {
 	std::string* pbuf = static_cast<std::string*>(userp);
 	pbuf->append(static_cast<const char*>(buffer), size * nmemb);
@@ -505,7 +505,7 @@ void utils::run_command(const std::string& cmd, const std::string& input)
 	rs_run_command(cmd.c_str(), input.c_str());
 }
 
-std::string utils::run_program(char* argv[], const std::string& input)
+std::string utils::run_program(const char* argv[], const std::string& input)
 {
 	return RustString(rs_run_program(argv, input.c_str()));
 }
@@ -515,7 +515,9 @@ std::string utils::resolve_tilde(const std::string& str)
 	return RustString(rs_resolve_tilde(str.c_str()));
 }
 
-std::string utils::resolve_relative(const std::string& reference, const std::string &fname) {
+std::string utils::resolve_relative(const std::string& reference,
+	const std::string& fname)
+{
 	return RustString(rs_resolve_relative(reference.c_str(), fname.c_str()));
 }
 
@@ -565,15 +567,15 @@ std::string utils::get_useragent(ConfigContainer* cfgcont)
 				PROCESSOR = "Intel ";
 			}
 			return strprintf::fmt("%s/%s (Macintosh; %sMac OS X)",
-				PROGRAM_NAME,
-				utils::program_version(),
-				PROCESSOR);
+					PROGRAM_NAME,
+					utils::program_version(),
+					PROCESSOR);
 		}
 		return strprintf::fmt("%s/%s (%s %s)",
-			PROGRAM_NAME,
-			utils::program_version(),
-			buf.sysname,
-			buf.machine);
+				PROGRAM_NAME,
+				utils::program_version(),
+				buf.sysname,
+				buf.machine);
 	}
 	return ua_pref;
 }
@@ -595,9 +597,9 @@ bool utils::is_valid_attribute(const std::string& attrib)
 }
 
 std::vector<std::pair<unsigned int, unsigned int>> utils::partition_indexes(
-	unsigned int start,
-	unsigned int end,
-	unsigned int parts)
+		unsigned int start,
+		unsigned int end,
+		unsigned int parts)
 {
 	std::vector<std::pair<unsigned int, unsigned int>> partitions;
 	unsigned int count = end - start + 1;
@@ -605,7 +607,7 @@ std::vector<std::pair<unsigned int, unsigned int>> utils::partition_indexes(
 
 	for (unsigned int i = 0; i < parts - 1; i++) {
 		partitions.push_back(std::pair<unsigned int, unsigned int>(
-			start, start + size - 1));
+				start, start + size - 1));
 		start += size;
 	}
 
@@ -648,60 +650,7 @@ size_t utils::wcswidth_stfl(const std::wstring& str, size_t size)
 std::string utils::substr_with_width(const std::string& str,
 	const size_t max_width)
 {
-	// Returns a longest substring fits to the given width.
-	// Returns an empty string if `str` is an empty string or `max_width` is
-	// zero,
-	//
-	// Each chararacter width is calculated with wcwidth(3). If wcwidth()
-	// returns < 1, the character width is treated as 0. A STFL tag (e.g.
-	// `<b>`, `<foobar>`, `</>`) width is treated as 0, but escaped
-	// less-than (`<>`) width is treated as 1.
-
-	if (str.empty() || max_width == 0) {
-		return std::string("");
-	}
-
-	const std::wstring wstr = utils::str2wstr(str);
-	size_t total_width = 0;
-	bool in_bracket = false;
-	std::wstring result;
-	std::wstring tagbuf;
-
-	for (const auto& wc : wstr) {
-		if (in_bracket) {
-			tagbuf += wc;
-			if (wc == L'>') { // tagbuf is escaped less-than or tag
-				in_bracket = false;
-				if (tagbuf == L"<>") {
-					if (total_width + 1 > max_width) {
-						break;
-					}
-					result += L"<>"; // escaped less-than
-					tagbuf.clear();
-					total_width++;
-				} else {
-					result += tagbuf;
-					tagbuf.clear();
-				}
-			}
-		} else {
-			if (wc == L'<') {
-				in_bracket = true;
-				tagbuf += wc;
-			} else {
-				int w = wcwidth(wc);
-				if (w < 1) {
-					w = 0;
-				}
-				if (total_width + w > max_width) {
-					break;
-				}
-				total_width += w;
-				result += wc;
-			}
-		}
-	}
-	return utils::wstr2str(result);
+	return RustString(rs_substr_with_width(str.c_str(), max_width));
 }
 
 std::string utils::join(const std::vector<std::string>& strings,
@@ -753,14 +702,7 @@ std::string utils::censor_url(const std::string& url)
 
 std::string utils::quote_for_stfl(std::string str)
 {
-	unsigned int len = str.length();
-	for (unsigned int i = 0; i < len; ++i) {
-		if (str[i] == '<') {
-			str.insert(i + 1, ">");
-			++len;
-		}
-	}
-	return str;
+	return RustString(rs_quote_for_stfl(str.c_str()));
 }
 
 void utils::trim(std::string& str)
@@ -878,23 +820,7 @@ std::string utils::get_content(xmlNode* node)
 
 std::string utils::get_basename(const std::string& url)
 {
-	std::string retval;
-	xmlURIPtr uri = xmlParseURI(url.c_str());
-	if (uri && uri->path) {
-		std::string path(uri->path);
-		// check for path ending with an empty filename
-		if (path[path.length() - 1] != '/') {
-			char* base = basename(uri->path);
-			if (base) {
-				// check for empty path
-				if (base[0] != '/') {
-					retval = std::string(base);
-				}
-			}
-		}
-		xmlFreeURI(uri);
-	}
-	return retval;
+	return RustString(rs_get_basename(url.c_str()));
 }
 
 unsigned long utils::get_auth_method(const std::string& type)
@@ -904,17 +830,22 @@ unsigned long utils::get_auth_method(const std::string& type)
 
 curl_proxytype utils::get_proxy_type(const std::string& type)
 {
-	if (type == "http")
+	if (type == "http") {
 		return CURLPROXY_HTTP;
-	if (type == "socks4")
+	}
+	if (type == "socks4") {
 		return CURLPROXY_SOCKS4;
-	if (type == "socks5")
+	}
+	if (type == "socks5") {
 		return CURLPROXY_SOCKS5;
-	if (type == "socks5h")
+	}
+	if (type == "socks5h") {
 		return CURLPROXY_SOCKS5_HOSTNAME;
+	}
 #ifdef CURLPROXY_SOCKS4A
-	if (type == "socks4a")
+	if (type == "socks4a") {
 		return CURLPROXY_SOCKS4A;
+	}
 #endif
 
 	if (type != "") {
@@ -939,63 +870,23 @@ std::string utils::unescape_url(const std::string& url)
 std::wstring utils::clean_nonprintable_characters(std::wstring text)
 {
 	for (size_t idx = 0; idx < text.size(); ++idx) {
-		if (!iswprint(text[idx]))
+		if (!iswprint(text[idx])) {
 			text[idx] = L'\uFFFD';
+		}
 	}
 	return text;
 }
 
 unsigned int utils::gentabs(const std::string& str)
 {
-	int tabcount = 4 - (utils::strwidth(str) / 8);
-	if (tabcount <= 0) {
-		tabcount = 1;
-	}
-	return tabcount;
+	return rs_gentabs(str.c_str());
 }
 
 /* Like mkdir(), but creates ancestors (parent directories) if they don't
  * exist. */
 int utils::mkdir_parents(const std::string& p, mode_t mode)
 {
-	int result = -1;
-
-	/* Have to copy the path because we're going to modify it */
-	std::vector<char> pathname(p.cbegin(), p.cend());
-	pathname.push_back('\0');
-	/* This pointer will run through the whole string looking for '/'.
-	 * We move it by one if path starts with slash because if we don't, the
-	 * first call to access() will fail (because of empty path) */
-	char* curr = pathname.data() + (pathname[0] == '/' ? 1 : 0);
-
-	while (*curr) {
-		if (*curr == '/') {
-			*curr = '\0';
-			result = mkdir(pathname.data(), mode);
-			if (result != 0) {
-				if (errno == EEXIST) {
-					result = 0;
-				} else {
-					break;
-				}
-			}
-			*curr = '/';
-		}
-		curr++;
-	}
-
-	if (result == 0) {
-		result = mkdir(p.c_str(), mode);
-
-		// It's not an error if the directory already exists. This happens when
-		// `p` ended with a slash, in which case the loop above creates all the
-		// path components.
-		if (result == -1 && errno == EEXIST) {
-			result = 0;
-		}
-	}
-
-	return result;
+	return rs_mkdir_parents(p.c_str(), static_cast<std::uint32_t>(mode));
 }
 
 std::string utils::make_title(const std::string& const_url)
@@ -1028,7 +919,7 @@ std::string utils::getcwd()
 
 int utils::strnaturalcmp(const std::string& a, const std::string& b)
 {
-	return doj::alphanum_comp(a, b);
+	return rs_strnaturalcmp(a.c_str(), b.c_str());
 }
 
 void utils::remove_soft_hyphens(std::string& text)
@@ -1044,21 +935,21 @@ bool utils::is_valid_podcast_type(const std::string& mimetype)
 	return rs_is_valid_podcast_type(mimetype.c_str());
 }
 
-	/*
-	 * See
-	 * http://curl.haxx.se/libcurl/c/libcurl-tutorial.html#Multi-threading
-	 * for a reason why we do this.
-	 *
-	 * These callbacks are deprecated as of OpenSSL 1.1.0; see the
-	 * changelog: https://www.openssl.org/news/changelog.html#x6
-	 */
+/*
+ * See
+ * http://curl.haxx.se/libcurl/c/libcurl-tutorial.html#Multi-threading
+ * for a reason why we do this.
+ *
+ * These callbacks are deprecated as of OpenSSL 1.1.0; see the
+ * changelog: https://www.openssl.org/news/changelog.html#x6
+ */
 
 #if HAVE_OPENSSL && OPENSSL_VERSION_NUMBER < 0x01010000fL
 static std::mutex* openssl_mutexes = nullptr;
 static int openssl_mutexes_size = 0;
 
-static void
-openssl_mth_locking_function(int mode, int n, const char* file, int line)
+static void openssl_mth_locking_function(int mode, int n, const char* file,
+	int line)
 {
 	if (n < 0 || n >= openssl_mutexes_size) {
 		LOG(Level::ERROR,
@@ -1111,6 +1002,26 @@ std::string utils::program_version()
 unsigned int utils::newsboat_version_major()
 {
 	return rs_newsboat_version_major();
+}
+
+std::string utils::mt_strf_localtime(const std::string& format, time_t t)
+{
+	// localtime() returns a pointer to static memory, so we need to protect
+	// its caller with a mutex to ensure that no two threads concurrently
+	// access that static memory. In Newsboat, the only caller for localtime()
+	// is strftime(), that's why this function bakes the two together.
+
+	static std::mutex mtx;
+	std::lock_guard<std::mutex> guard(mtx);
+
+	const size_t BUFFER_SIZE = 4096;
+	char buffer[BUFFER_SIZE];
+	const size_t written = strftime(buffer,
+			BUFFER_SIZE,
+			format.c_str(),
+			localtime(&t));
+
+	return std::string(buffer, written);
 }
 
 } // namespace newsboat

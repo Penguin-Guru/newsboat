@@ -9,7 +9,8 @@
 
 namespace newsboat {
 
-std::string item_renderer::get_feedtitle(std::shared_ptr<RssItem> item) {
+std::string item_renderer::get_feedtitle(std::shared_ptr<RssItem> item)
+{
 	const std::shared_ptr<RssFeed> feedptr = item->get_feedptr();
 
 	if (!feedptr) {
@@ -37,33 +38,32 @@ void prepare_header(
 	const auto add_line =
 		[&lines]
 		(const std::string& value,
-		 const std::string& name,
-		 LineType lineType = LineType::wrappable)
-		{
-			if (!value.empty()) {
-				const auto line = strprintf::fmt("%s%s", name, value);
-				lines.push_back(std::make_pair(lineType, line));
-			}
-		};
+			const std::string& name,
+	LineType lineType = LineType::wrappable) {
+		if (!value.empty()) {
+			const auto line = strprintf::fmt("%s%s", name, value);
+			lines.push_back(std::make_pair(lineType, line));
+		}
+	};
 
 	const std::string feedtitle = item_renderer::get_feedtitle(item);
 	add_line(feedtitle, _("Feed: "));
-	add_line(item->title(), _("Title: "));
-	add_line(item->author(), _("Author: "));
+	add_line(utils::utf8_to_locale(item->title()), _("Title: "));
+	add_line(utils::utf8_to_locale(item->author()), _("Author: "));
 	add_line(item->pubDate(), _("Date: "));
 	add_line(item->link(), _("Link: "), LineType::softwrappable);
 	add_line(item->flags(), _("Flags: "));
 
 	if (!item->enclosure_url().empty()) {
 		auto dlurl = strprintf::fmt(
-			"%s%s",
-			_("Podcast Download URL: "),
-			utils::censor_url(item->enclosure_url()));
+				"%s%s",
+				_("Podcast Download URL: "),
+				utils::censor_url(item->enclosure_url()));
 		if (!item->enclosure_type().empty()) {
 			dlurl.append(
-					strprintf::fmt(" (%s%s)",
-						_("type: "),
-						item->enclosure_type()));
+				strprintf::fmt(" (%s%s)",
+					_("type: "),
+					item->enclosure_type()));
 		}
 		lines.push_back(std::make_pair(LineType::softwrappable, dlurl));
 	}
@@ -93,10 +93,10 @@ void render_html(
 		HtmlRenderer rnd(raw);
 		rnd.render(source, lines, thelinks, url);
 	} else {
-		char* argv[4];
-		argv[0] = const_cast<char*>("/bin/sh");
-		argv[1] = const_cast<char*>("-c");
-		argv[2] = const_cast<char*>(renderer.c_str());
+		const char* argv[4];
+		argv[0] = "/bin/sh";
+		argv[1] = "-c";
+		argv[2] = renderer.c_str();
 		argv[3] = nullptr;
 		LOG(Level::DEBUG,
 			"item_renderer::render_html: source = %s",
@@ -119,15 +119,16 @@ void render_html(
 }
 
 std::string item_renderer::to_plain_text(
-		ConfigContainer& cfg,
-		std::shared_ptr<RssItem> item)
+	ConfigContainer& cfg,
+	std::shared_ptr<RssItem> item)
 {
 	std::vector<std::pair<LineType, std::string>> lines;
 	std::vector<LinkPair> links;
 
 	prepare_header(item, lines, links);
 	const auto base = get_item_base_link(item);
-	render_html(cfg, item->description(), lines, links, base, true);
+	render_html(cfg, utils::utf8_to_locale(item->description()), lines, links,
+		base, true);
 
 	TextFormatter txtfmt;
 	txtfmt.add_lines(lines);
@@ -141,19 +142,19 @@ std::string item_renderer::to_plain_text(
 }
 
 std::pair<std::string, size_t> item_renderer::to_stfl_list(
-		ConfigContainer& cfg,
-		std::shared_ptr<RssItem> item,
-		unsigned int text_width,
-		unsigned int window_width,
-		RegexManager* rxman,
-		const std::string& location,
-		std::vector<LinkPair>& links)
+	ConfigContainer& cfg,
+	std::shared_ptr<RssItem> item,
+	unsigned int text_width,
+	unsigned int window_width,
+	RegexManager* rxman,
+	const std::string& location,
+	std::vector<LinkPair>& links)
 {
 	std::vector<std::pair<LineType, std::string>> lines;
 
 	prepare_header(item, lines, links);
 	const std::string baseurl = get_item_base_link(item);
-	const auto body = item->description();
+	const auto body = utils::utf8_to_locale(item->description());
 	render_html(cfg, body, lines, links, baseurl, false);
 
 	TextFormatter txtfmt;
@@ -185,17 +186,18 @@ void render_source(
 }
 
 std::pair<std::string, size_t> item_renderer::source_to_stfl_list(
-		std::shared_ptr<RssItem> item,
-		unsigned int text_width,
-		unsigned int window_width,
-		RegexManager* rxman,
-		const std::string& location)
+	std::shared_ptr<RssItem> item,
+	unsigned int text_width,
+	unsigned int window_width,
+	RegexManager* rxman,
+	const std::string& location)
 {
 	std::vector<std::pair<LineType, std::string>> lines;
 	std::vector<LinkPair> links;
 
 	prepare_header(item, lines, links);
-	render_source(lines, utils::quote_for_stfl(item->description()));
+	render_source(lines, utils::quote_for_stfl(utils::utf8_to_locale(
+				item->description())));
 
 	TextFormatter txtfmt;
 	txtfmt.add_lines(lines);

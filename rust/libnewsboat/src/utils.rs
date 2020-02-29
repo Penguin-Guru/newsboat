@@ -1,20 +1,24 @@
 extern crate curl_sys;
 extern crate dirs;
 extern crate libc;
+extern crate natord;
 extern crate rand;
 extern crate regex;
+extern crate std;
 extern crate unicode_segmentation;
 extern crate unicode_width;
 extern crate url;
 
 use self::regex::Regex;
 use self::unicode_segmentation::UnicodeSegmentation;
-use self::unicode_width::UnicodeWidthStr;
+use self::unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 use self::url::percent_encoding::*;
 use self::url::Url;
 use libc::c_ulong;
 use logger::{self, Level};
+use std::fs::DirBuilder;
 use std::io::{self, Write};
+use std::os::unix::fs::DirBuilderExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
@@ -82,28 +86,15 @@ pub fn absolute_url(base_url: &str, link: &str) -> String {
         .to_owned()
 }
 
-pub fn resolve_tilde(path: String) -> String {
-    let mut file_path: String = path;
-    let home_path = dirs::home_dir();
-
-    if let Some(home_path) = home_path {
-        let home_path_string = home_path.to_string_lossy().into_owned();
-
-        if file_path == "~" {
-            file_path = home_path_string;
-        } else {
-            let tmp_file_path = file_path.clone();
-
-            if tmp_file_path.len() > 1 {
-                let (tilde, remaining) = tmp_file_path.split_at(2);
-
-                if tilde == "~/" {
-                    file_path = home_path_string + "/" + remaining;
-                }
-            }
-        }
+/// Replaces tilde (`~`) at the beginning of the path with the path to user's home directory.
+pub fn resolve_tilde(path: PathBuf) -> PathBuf {
+    if let (Some(home), Ok(suffix)) = (dirs::home_dir(), path.strip_prefix("~")) {
+        return home.join(suffix);
     }
-    file_path
+
+    // Either the `path` doesn't start with tilde, or we couldn't figure out the path to the
+    // home directory -- either way, it's no big deal. Let's return the original string.
+    path
 }
 
 pub fn resolve_relative(reference: &Path, path: &Path) -> PathBuf {
@@ -199,6 +190,36 @@ pub fn censor_url(url: &str) -> String {
     }
 }
 
+/// Quote a string for use with stfl by replacing all occurences of "<" with "<>"
+/// ```
+/// use libnewsboat::utils::quote_for_stfl;
+/// assert_eq!(&quote_for_stfl("<"), "<>");
+/// assert_eq!(&quote_for_stfl("<<><><><"), "<><>><>><>><>");
+/// assert_eq!(&quote_for_stfl("test"), "test");
+/// ```
+pub fn quote_for_stfl(string: &str) -> String {
+    string.replace("<", "<>")
+}
+
+/// Get basename from a URL if available else return an empty string
+/// ```
+/// use libnewsboat::utils::get_basename;
+/// assert_eq!(get_basename("https://example.com/"), "");
+/// assert_eq!(get_basename("https://example.org/?param=value#fragment"), "");
+/// assert_eq!(get_basename("https://example.org/path/to/?param=value#fragment"), "");
+/// assert_eq!(get_basename("https://example.org/file.mp3"), "file.mp3");
+/// assert_eq!(get_basename("https://example.org/path/to/file.mp3?param=value#fragment"), "file.mp3");
+/// ```
+pub fn get_basename(input: &str) -> String {
+    match Url::parse(input) {
+        Ok(url) => match url.path_segments() {
+            Some(segments) => segments.last().unwrap().to_string(),
+            None => String::from(""),
+        },
+        Err(_) => String::from(""),
+    }
+}
+
 pub fn get_default_browser() -> String {
     use std::env;
     env::var("BROWSER").unwrap_or_else(|_| "lynx".to_string())
@@ -282,13 +303,65 @@ pub fn strwidth_stfl(rs_str: &str) -> usize {
     }
 }
 
+/// Returns a longest substring fits to the given width.
+/// Returns an empty string if `str` is an empty string or `max_width` is zero.
+///
+/// Each chararacter width is calculated with UnicodeWidthChar::width. If UnicodeWidthChar::width()
+/// returns None, the character width is treated as 0. A STFL tag (e.g. `<b>`, `<foobar>`, `</>`)
+/// width is treated as 0, but escaped less-than (`<>`) width is treated as 1.
+/// ```
+/// use libnewsboat::utils::substr_with_width;
+/// assert_eq!(substr_with_width("a", 1), "a");
+/// assert_eq!(substr_with_width("a", 2), "a");
+/// assert_eq!(substr_with_width("ab", 1), "a");
+/// assert_eq!(substr_with_width("abc", 1), "a");
+/// assert_eq!(substr_with_width("A\u{3042}B\u{3044}C\u{3046}", 5), "A\u{3042}B")
+///```
+pub fn substr_with_width(string: &str, max_width: usize) -> String {
+    let mut result = String::new();
+    let mut in_bracket = false;
+    let mut tagbuf = Vec::<char>::new();
+    let mut width = 0;
+    for c in string.chars() {
+        if in_bracket {
+            tagbuf.push(c);
+            if c == '>' {
+                in_bracket = false;
+                if tagbuf == ['<', '>'] {
+                    if width + 1 > max_width {
+                        break;
+                    }
+                    result += "<>"; // escaped less-than
+                    tagbuf.clear();
+                    width += 1;
+                } else {
+                    result += &tagbuf.iter().collect::<String>();
+                    tagbuf.clear();
+                }
+            }
+        } else {
+            if c == '<' {
+                in_bracket = true;
+                tagbuf.push(c);
+            } else {
+                // Control chars count as width 0
+                let w = UnicodeWidthChar::width(c).unwrap_or(0);
+                if width + w > max_width {
+                    break;
+                }
+                width += w;
+                result.push(c);
+            }
+        }
+    }
+    result
+}
+
 /// Remove all soft-hyphens as they can behave unpredictably (see
 /// https://github.com/akrennmair/newsbeuter/issues/259#issuecomment-259609490) and inadvertently
 /// render as hyphens
 pub fn remove_soft_hyphens(text: &mut String) {
-    // TODO: Use `text.retain(|c| c != '\u{00AD}')` as soon as we bump the minimum Rust version to
-    // 1.26 or higher
-    *text = text.replace("\u{00AD}", "")
+    text.retain(|c| c != '\u{00AD}')
 }
 
 pub fn is_valid_podcast_type(mimetype: &str) -> bool {
@@ -460,6 +533,57 @@ pub fn getcwd() -> Result<PathBuf, io::Error> {
     env::current_dir()
 }
 
+pub fn strnaturalcmp(a: &str, b: &str) -> std::cmp::Ordering {
+    natord::compare(a, b)
+}
+
+/// Calculate the number of padding tabs when formatting columns
+///
+/// The number of tabs will be adjusted by the width of the given string.  Usually, a column will
+/// consist of 4 tabs, 8 characters each.  Each column will consist of at least one tab.
+///
+/// ```
+/// use libnewsboat::utils::gentabs;
+///
+/// fn genstring(len: usize) -> String {
+///     return std::iter::repeat("a").take(len).collect::<String>();
+/// }
+///
+/// assert_eq!(gentabs(""), 4);
+/// assert_eq!(gentabs("a"), 4);
+/// assert_eq!(gentabs("aa"), 4);
+/// assert_eq!(gentabs("aaa"), 4);
+/// assert_eq!(gentabs("aaaa"), 4);
+/// assert_eq!(gentabs("aaaaa"), 4);
+/// assert_eq!(gentabs("aaaaaa"), 4);
+/// assert_eq!(gentabs("aaaaaaa"), 4);
+/// assert_eq!(gentabs("aaaaaaaa"), 3);
+/// assert_eq!(gentabs(&genstring(8)), 3);
+/// assert_eq!(gentabs(&genstring(9)), 3);
+/// assert_eq!(gentabs(&genstring(15)), 3);
+/// assert_eq!(gentabs(&genstring(16)), 2);
+/// assert_eq!(gentabs(&genstring(20)), 2);
+/// assert_eq!(gentabs(&genstring(24)), 1);
+/// assert_eq!(gentabs(&genstring(32)), 1);
+/// assert_eq!(gentabs(&genstring(100)), 1);
+/// ```
+pub fn gentabs(string: &str) -> usize {
+    let tabcount = strwidth(string) / 8;
+    if tabcount >= 4 {
+        1
+    } else {
+        4 - tabcount
+    }
+}
+
+/// Recursively create directories if missing and set permissions accordingly.
+pub fn mkdir_parents<R: AsRef<Path>>(p: &R, mode: u32) -> io::Result<()> {
+    DirBuilder::new()
+        .mode(mode)
+        .recursive(true) // directories created with same security and permissions
+        .create(p.as_ref())
+}
+
 /// Counts graphemes in a given string.
 ///
 /// ```
@@ -510,6 +634,61 @@ pub fn newsboat_major_version() -> u32 {
     // This will panic if the version couldn't be parsed, which is virtually impossible as Cargo
     // won't even start compilation if it couldn't parse the version.
     env!("CARGO_PKG_VERSION_MAJOR").parse::<u32>().unwrap()
+}
+
+/// Returns the part of the string before first # character (or the whole input string if there are
+/// no # character in it). Pound characters inside double quotes and backticks are ignored.
+pub fn strip_comments(line: &str) -> &str {
+    let mut prev_was_backslash = false;
+    let mut inside_quotes = false;
+    let mut inside_backticks = false;
+
+    let mut first_pound_chr_idx = line.len();
+
+    for (idx, chr) in line.char_indices() {
+        if chr == '\\' {
+            prev_was_backslash = true;
+            continue;
+        } else if chr == '"' {
+            // If the quote is escaped or we're inside backticks, do nothing
+            if !prev_was_backslash && !inside_backticks {
+                inside_quotes = !inside_quotes;
+            }
+        } else if chr == '`' {
+            // If the backtick is escaped, do nothing
+            if !prev_was_backslash {
+                inside_backticks = !inside_backticks;
+            }
+        } else if chr == '#' {
+            if !prev_was_backslash && !inside_quotes && !inside_backticks {
+                first_pound_chr_idx = idx;
+                break;
+            }
+        }
+
+        // We call `continue` when we run into a backslash; here, we handle all the other
+        // characters, which clearly *aren't* a backslash
+        prev_was_backslash = false;
+    }
+
+    &line[0..first_pound_chr_idx]
+}
+
+/// Extract filter and url from line separated by ':'.
+pub fn extract_filter(line: &str) -> (&str, &str) {
+    debug_assert!(line.starts_with("filter:"));
+    // line must start with "filter:"
+    let line = line.get("filter:".len()..).unwrap();
+    let (filter, url) = line.split_at(line.find(':').unwrap_or(0));
+    let url = url.get(1..).unwrap_or("");
+    log!(
+        Level::Debug,
+        "utils::extract_filter: {} -> filter: {} url: {}",
+        line,
+        filter,
+        url
+    );
+    (filter, url)
 }
 
 #[cfg(test)]
@@ -719,6 +898,47 @@ mod tests {
     }
 
     #[test]
+    fn t_substr_with_width_given_string_empty() {
+        assert!(substr_with_width("", 0).is_empty());
+        assert!(substr_with_width("", 1).is_empty());
+    }
+
+    #[test]
+    fn t_substr_with_width_max_width_zero() {
+        assert!(substr_with_width("world", 0).is_empty());
+        assert!(substr_with_width("", 0).is_empty());
+    }
+
+    #[test]
+    fn t_substr_with_width_max_width_dont_split_codepoints() {
+        assert_eq!(substr_with_width("ＡＢＣ<b>ＤＥ</b>Ｆ", 9), "ＡＢＣ<b>Ｄ");
+        assert_eq!(substr_with_width("<foobar>ＡＢＣ", 4), "<foobar>ＡＢ");
+        assert_eq!(substr_with_width("a<<xyz>>bcd", 3), "a<<xyz>>b"); // tag: "<<xyz>"
+        assert_eq!(substr_with_width("ＡＢＣ<b>ＤＥ", 10), "ＡＢＣ<b>ＤＥ");
+        assert_eq!(substr_with_width("a</>b</>c</>", 2), "a</>b</>");
+    }
+
+    #[test]
+    fn t_substr_with_width_max_width_do_not_count_stfl_tag() {
+        assert_eq!(substr_with_width("ＡＢＣ<b>ＤＥ</b>Ｆ", 9), "ＡＢＣ<b>Ｄ");
+        assert_eq!(substr_with_width("<foobar>ＡＢＣ", 4), "<foobar>ＡＢ");
+        assert_eq!(substr_with_width("a<<xyz>>bcd", 3), "a<<xyz>>b"); // tag: "<<xyz>"
+        assert_eq!(substr_with_width("ＡＢＣ<b>ＤＥ", 10), "ＡＢＣ<b>ＤＥ");
+        assert_eq!(substr_with_width("a</>b</>c</>", 2), "a</>b</>");
+    }
+
+    #[test]
+    fn t_substr_with_width_max_width_count_escaped_less_than_mark() {
+        assert_eq!(substr_with_width("<><><>", 2), "<><>");
+        assert_eq!(substr_with_width("a<>b<>c", 3), "a<>b");
+    }
+
+    #[test]
+    fn t_substr_with_width_max_width_non_printable() {
+        assert_eq!(substr_with_width("\x01\x02abc", 1), "\x01\x02a");
+    }
+
+    #[test]
     fn t_is_valid_podcast_type() {
         assert!(is_valid_podcast_type("audio/mpeg"));
         assert!(is_valid_podcast_type("audio/mp3"));
@@ -794,6 +1014,7 @@ mod tests {
             get_command_output("a-program-that-is-guaranteed-to-not-exists"),
             "".to_string()
         );
+        assert_eq!(get_command_output("echo c\" d e"), "".to_string());
     }
 
     #[test]
@@ -811,7 +1032,17 @@ mod tests {
 
         run_command("touch", filepath.to_str().unwrap());
 
-        thread::sleep(time::Duration::from_millis(10));
+        // Busy-wait for 10 tries of 10 milliseconds each, waiting for `touch` to
+        // create the file. Usually it happens quickly, and the loop exists on the
+        // first try; but sometimes on CI it takes longer for `touch` to finish, so
+        // we need a slightly longer wait.
+        for _ in 0..10 {
+            thread::sleep(time::Duration::from_millis(10));
+
+            if filepath.exists() {
+                break;
+            }
+        }
 
         assert!(filepath.exists());
     }
@@ -956,4 +1187,131 @@ mod tests {
         }
     }
 
+    #[test]
+    fn t_mkdir_parents() {
+        use self::tempfile::TempDir;
+        use std::fs;
+        use std::os::unix::fs::PermissionsExt;
+
+        let mode: u32 = 0o700;
+        let tmp_dir = TempDir::new().unwrap();
+        let path = tmp_dir.path().join("parent/dir");
+        assert_eq!(path.exists(), false);
+
+        let result = mkdir_parents(&path, mode);
+        assert!(result.is_ok());
+        assert_eq!(path.exists(), true);
+
+        let file_type_mask = 0o7777;
+        let metadata = fs::metadata(&path).unwrap();
+        assert_eq!(file_type_mask & metadata.permissions().mode(), mode);
+
+        // rerun on existing directories
+        let result = mkdir_parents(&path, mode);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn t_strnaturalcmp() {
+        use std::cmp::Ordering;
+        assert_eq!(strnaturalcmp("", ""), Ordering::Equal);
+        assert_eq!(strnaturalcmp("", "a"), Ordering::Less);
+        assert_eq!(strnaturalcmp("a", ""), Ordering::Greater);
+        assert_eq!(strnaturalcmp("a", "a"), Ordering::Equal);
+        assert_eq!(strnaturalcmp("", "9"), Ordering::Less);
+        assert_eq!(strnaturalcmp("9", ""), Ordering::Greater);
+        assert_eq!(strnaturalcmp("1", "1"), Ordering::Equal);
+        assert_eq!(strnaturalcmp("1", "2"), Ordering::Less);
+        assert_eq!(strnaturalcmp("3", "2"), Ordering::Greater);
+        assert_eq!(strnaturalcmp("a1", "a1"), Ordering::Equal);
+        assert_eq!(strnaturalcmp("a1", "a2"), Ordering::Less);
+        assert_eq!(strnaturalcmp("a2", "a1"), Ordering::Greater);
+        assert_eq!(strnaturalcmp("a1a2", "a1a3"), Ordering::Less);
+        assert_eq!(strnaturalcmp("a1a2", "a1a0"), Ordering::Greater);
+        assert_eq!(strnaturalcmp("134", "122"), Ordering::Greater);
+        assert_eq!(strnaturalcmp("12a3", "12a3"), Ordering::Equal);
+        assert_eq!(strnaturalcmp("12a1", "12a0"), Ordering::Greater);
+        assert_eq!(strnaturalcmp("12a1", "12a2"), Ordering::Less);
+        assert_eq!(strnaturalcmp("a", "aa"), Ordering::Less);
+        assert_eq!(strnaturalcmp("aaa", "aa"), Ordering::Greater);
+        assert_eq!(strnaturalcmp("Alpha 2", "Alpha 2"), Ordering::Equal);
+        assert_eq!(strnaturalcmp("Alpha 2", "Alpha 2A"), Ordering::Less);
+        assert_eq!(strnaturalcmp("Alpha 2 B", "Alpha 2"), Ordering::Greater);
+
+        assert_eq!(strnaturalcmp("aa10", "aa2"), Ordering::Greater);
+    }
+
+    #[test]
+    fn t_strip_comments() {
+        // no comments in line
+        assert_eq!(strip_comments(""), "");
+        assert_eq!(strip_comments("\t\n"), "\t\n");
+        assert_eq!(strip_comments("some directive "), "some directive ");
+
+        // fully commented line
+        assert_eq!(strip_comments("#"), "");
+        assert_eq!(strip_comments("# #"), "");
+        assert_eq!(strip_comments("# comment"), "");
+
+        // partially commented line
+        assert_eq!(strip_comments("directive # comment"), "directive ");
+        assert_eq!(
+            strip_comments("directive # comment # another"),
+            "directive "
+        );
+        assert_eq!(strip_comments("directive#comment"), "directive");
+
+        // ignores # characters inside double quotes (#652)
+        let expected = r#"highlight article "[-=+#_*~]{3,}.*" green default"#;
+        let input = expected.to_owned() + "# this is a comment";
+        assert_eq!(strip_comments(&input), expected);
+
+        let expected =
+            r#"highlight all "(https?|ftp)://[\-\.,/%~_:?&=\#a-zA-Z0-9]+" blue default bold"#;
+        let input = expected.to_owned() + "#heresacomment";
+        assert_eq!(strip_comments(&input), expected);
+
+        // Escaped double quote inside double quotes is not treated as closing quote
+        let expected = r#"test "here \"goes # nothing\" etc" hehe"#;
+        let input = expected.to_owned() + "# and here is a comment";
+        assert_eq!(strip_comments(&input), expected);
+
+        // Ignores # characters inside backticks
+        let expected = r#"one `two # three` four"#;
+        let input = expected.to_owned() + "# and a comment, of course";
+        assert_eq!(strip_comments(&input), expected);
+
+        // Escaped backtick inside backticks is not treated as closing
+        let expected = r#"some `other \` tricky # test` hehe"#;
+        let input = expected.to_owned() + "#here goescomment";
+        assert_eq!(strip_comments(&input), expected);
+
+        // Ignores escaped # characters (\\#)
+        let expected = r#"one two \# three four"#;
+        let input = expected.to_owned() + "# and a comment";
+        assert_eq!(strip_comments(&input), expected);
+    }
+
+    #[test]
+    fn t_extract_filter() {
+        let expected = ("~/bin/script.sh", "https://newsboat.org");
+        let input = "filter:~/bin/script.sh:https://newsboat.org";
+        assert_eq!(extract_filter(input), expected);
+
+        let expected = ("", "https://newsboat.org");
+        let input = "filter::https://newsboat.org";
+        assert_eq!(extract_filter(input), expected);
+
+        let expected = ("https", "//newsboat.org");
+        let input = "filter:https://newsboat.org";
+        assert_eq!(extract_filter(input), expected);
+
+        let expected = ("foo", "");
+        let input = "filter:foo:";
+        assert_eq!(extract_filter(input), expected);
+
+        let expected = ("", "");
+        let input = "filter:";
+        assert_eq!(extract_filter(input), expected);
+    }
 }

@@ -1,6 +1,6 @@
 [package]
 name = "libnewsboat"
-version = "2.16.1"
+version = "2.18.0"
 authors = ["Alexander Batischev <eual.jp@gmail.com>"]
 
 [dependencies]
@@ -12,6 +12,7 @@ once_cell = "0.1.6"
 regex = "1.0"
 url = "1.7"
 dirs = "1.0.4"
+xdg = "2.2.0"
 backtrace = "= 0.3"
 unicode-width = "0.1.5"
 nom = "^4.1"
@@ -19,10 +20,16 @@ unicode-segmentation = "1"
 curl-sys = "0.4.5"
 libc = "0.2"
 gettext-rs = "0.4.1"
+natord = "1.0.9"
 
 # We don't use the following crates, but we pin their versions to make sure
 # that Newsboat builds with Rust 1.25 and later.
 libz-sys = "= 1.0.17"
+
+# The following constraints close security holes
+# https://rustsec.org/advisories/RUSTSEC-2019-0009
+# https://rustsec.org/advisories/RUSTSEC-2019-0012
+smallvec = ">= 0.6.10"
 
 [dependencies.clap]
 version = "2.33"
@@ -44,3 +51,4 @@ features = [ "gettext-system" ]
 [dev-dependencies]
 tempfile = "3"
 proptest = "0.7"
+section_testing = "0.0.4"

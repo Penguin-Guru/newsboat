@@ -1,25 +1,263 @@
 freebsd_task:
-    freebsd_instance:
-        matrix:
-            - image: freebsd-11-2-release-amd64
-            - image: freebsd-12-0-release-amd64
+    matrix:
+        - name: FreeBSD 11.2
+          freebsd_instance:
+            image: freebsd-11-2-release-amd64
+            memory: 3GB
+        - name: FreeBSD 12.0
+          freebsd_instance:
+            image: freebsd-12-0-release-amd64
+            memory: 3GB
 
-    install_script: pkg install -y rust gmake asciidoc pkgconf stfl curl json-c ncurses openssl sqlite3 gettext-tools
+    cargo_cache:
+        folder: $HOME/.cargo/registry
+        fingerprint_script: cat Cargo.lock
+
+    env:
+        HOME: /home/testuser
+
+    install_script: pkg install -y rust gmake rubygem-asciidoctor pkgconf stfl curl json-c ncurses openssl111 sqlite3 gettext-tools libxml2
+    setup_script:
+        - pw groupadd testgroup
+        - pw useradd testuser -g testgroup -w none -m
+        - cp -R . $HOME
+        - chown -R testuser:testgroup $HOME
     # CI builds take a while to provision, install dependencies and compile our
     # stuff. To maximize the benefits, we ask Make to process as many rules as
     # possible before failing. This enables developers to fix more errors before
     # re-submitting the code to CI, which should increase throughput.
     #
     # Running three jobs because by default, VMs have 2 cores.
-    compile_script: RUST_BACKTRACE=1 gmake --jobs=3 --keep-going all test
-    test_script: cargo test
+    build_script: su testuser -c 'cd ~ && gmake --jobs=3 --keep-going all test'
+    test_script: su testuser -c 'cd ~ && ( cd test && ./test --order rand ); ret=$?; (RUST_BACKTRACE=1 cargo test --jobs=3) && sh -c "exit $ret"'
+    before_cache_script: &before_cache_script
+        - rm -rf $HOME/.cargo/registry/index
 
 32bit_ubuntu_task:
-    # We broke 32-bit builds (https://github.com/newsboat/newsboat/issues/555),
-    # so let this fail until we fix it.
-    allow_failures: true
-
+    name: Linux i686
     container:
         dockerfile: docker/ubuntu_18.04-i686.dockerfile
-    build_script: make -j3 --keep-going all test
-    test_script: ( cd test && ./test --order rand ); ret=$?; (cargo test) && sh -c "exit $ret"
+        memory: 3GB
+    cargo_cache:
+        folder: $HOME/.cargo/registry
+        fingerprint_script: cat Cargo.lock
+    build_script: &build_script
+        - make -j3 --keep-going all test
+    test_script: &test_script
+        # We want to run both C++ and Rust tests, but we also want this entire
+        # command to fail if one of the test suites fails. That's why we store
+        # the C++'s exit code and chain it to Rust's in the end.
+        - ( cd test && ./test --order rand ); ret=$?; (RUST_BACKTRACE=1 cargo test --jobs=3) && sh -c "exit $ret"
+    before_cache_script: *before_cache_script
+
+macos_task:
+    osx_instance:
+        image: catalina-base
+
+    cargo_cache:
+        folder: $HOME/.cargo/registry
+        fingerprint_script: cat Cargo.lock
+
+    install_script:
+        - brew update
+        - brew install rustup-init
+        - brew install gcc || brew link --overwrite gcc
+        - brew install python
+        - export PATH=/usr/local/opt/python/libexec/bin:$PATH
+        - brew outdated "pkg-config" || brew upgrade "pkg-config"
+        - brew install "gettext" && brew link --force "gettext"
+        - brew outdated "sqlite" || brew upgrade "sqlite"
+        - brew outdated "curl" || brew upgrade "curl"
+        - brew install "libstfl"
+        - brew install "json-c"
+        - brew install "asciidoctor"
+        - brew install "libxml2"
+        - brew install "pyenv" || brew upgrade "pyenv"
+        - rustup-init -y --default-toolchain $RUST
+        - eval "$(pyenv init -)"
+        - pip3 install cpp-coveralls
+        - pyenv rehash
+        - rustc --version && cargo --version
+
+    env:
+        GCOV: /usr/bin/gcov
+        PKG_CONFIG_PATH: /usr/local/opt/libxml2/lib/pkgconfig:$PKG_CONFIG_PATH
+        PATH: $HOME/.cargo/bin:$PATH
+
+    build_script: *build_script
+    test_script: *test_script
+    before_cache_script: *before_cache_script
+
+    matrix:
+        - name: macOS Clang Rust stable
+          env:
+              CC: clang
+              CXX: clang++
+              RUST: stable
+        - name: macOS GCC Rust stable
+          env:
+              CC: gcc
+              CXX: g++
+              RUST: stable
+        - name: macOS GCC Rust 1.26.0
+          env:
+              CC: gcc
+              CXX: g++
+              RUST: 1.26.0
+
+formatting_task:
+    name: Code formatting
+    container:
+        dockerfile: docker/code-formatting-tools.dockerfile
+        cpu: 1
+        memory: 256MB
+    script:
+        - make fmt
+          # --exit-code forces git-diff to exit with code 1 if there were
+          # changes; that'll fail the build, which is exactly what we need
+        - git diff --exit-code
+
+linux_task:
+    matrix:
+        - name: Rust 1.41.0, GCC 5
+          container:
+            dockerfile: docker/ubuntu_18.04-build-tools.dockerfile
+            docker_arguments:
+                cxx_package: g++-5
+                cc: gcc-5
+                cxx: g++-5
+            memory: 3GB
+        - name: Rust 1.41.0, GCC 6
+          container:
+            dockerfile: docker/ubuntu_18.04-build-tools.dockerfile
+            docker_arguments:
+                cxx_package: g++-6
+                cc: gcc-6
+                cxx: g++-6
+            memory: 3GB
+        - name: Rust 1.41.0, GCC 7
+          container:
+            dockerfile: docker/ubuntu_18.04-build-tools.dockerfile
+            docker_arguments:
+                cxx_package: g++-7
+                cc: gcc-7
+                cxx: g++-7
+            memory: 3GB
+        - name: Rust 1.41.0, GCC 8
+          container:
+            dockerfile: docker/ubuntu_18.04-build-tools.dockerfile
+            docker_arguments:
+                cxx_package: g++-8
+                cc: gcc-8
+                cxx: g++-8
+            memory: 3GB
+        - name: Rust 1.41.0, GCC 9
+          container:
+            dockerfile: docker/ubuntu_18.04-build-tools.dockerfile
+            docker_arguments:
+                cxx_package: g++-9
+                cc: gcc-9
+                cxx: g++-9
+            memory: 3GB
+        - name: Rust 1.41.0, Clang 4.0
+          container:
+            dockerfile: docker/ubuntu_18.04-build-tools.dockerfile
+            docker_arguments:
+                cxx_package: clang-4.0
+                cc: clang-4.0
+                cxx: clang++-4.0
+            memory: 3GB
+        - name: Rust 1.41.0, Clang 5.0
+          container:
+            dockerfile: docker/ubuntu_18.04-build-tools.dockerfile
+            docker_arguments:
+                cxx_package: clang-5.0
+                cc: clang-5.0
+                cxx: clang++-5.0
+            memory: 3GB
+        - name: Rust 1.41.0, Clang 6.0
+          container:
+            dockerfile: docker/ubuntu_18.04-build-tools.dockerfile
+            docker_arguments:
+                cxx_package: clang-6.0
+                cc: clang-6.0
+                cxx: clang++-6.0
+            memory: 3GB
+        - name: Rust 1.41.0, Clang 7
+          container:
+            dockerfile: docker/ubuntu_18.04-build-tools.dockerfile
+            docker_arguments:
+                cxx_package: clang-7
+                cc: clang-7
+                cxx: clang++-7
+            memory: 3GB
+        - name: Rust 1.41.0, Clang 8
+          container:
+            dockerfile: docker/ubuntu_18.04-build-tools.dockerfile
+            docker_arguments:
+                cxx_package: clang-8
+                cc: clang-8
+                cxx: clang++-8
+            memory: 3GB
+        - name: Rust 1.41.0, Clang 9
+          container:
+            dockerfile: docker/ubuntu_18.04-build-tools.dockerfile
+            docker_arguments:
+                cxx_package: clang-9
+                cc: clang-9
+                cxx: clang++-9
+            memory: 3GB
+
+    cargo_cache:
+        folder: $HOME/.cargo/registry
+        fingerprint_script: cat Cargo.lock
+
+    build_script: *build_script
+    test_script: *test_script
+    before_cache_script: *before_cache_script
+
+address_sanitizer_task:
+    name: AddressSanitizer
+
+    container:
+      dockerfile: docker/ubuntu_18.04-build-tools.dockerfile
+      docker_arguments:
+          # We need llvm-symbolizer from llvm-9-tools to demangle symbols in
+          # sanitizer's reports
+          cxx_package: "clang-9 llvm-9"
+          cc: clang-9
+          cxx: clang++-9
+
+    env:
+      CXXFLAGS: "-fsanitize=address -fsanitize-address-use-after-scope -fno-omit-frame-pointer -fno-optimize-sibling-calls -g"
+      ASAN_OPTIONS: "check_initialization_order=1:detect_stack_use_after_return=1"
+
+    cargo_cache:
+        folder: $HOME/.cargo/registry
+        fingerprint_script: cat Cargo.lock
+
+    # Sanitizers only apply to C++, so we only build and run C++ tests. Also,
+    # we don't pass --keep-going to the build: failures can be debugged with
+    # logs of other jobs.
+    build_script: make -j3 test/test
+    test_script: cd test && ./test --order rand
+    before_cache_script: *before_cache_script
+
+depslist_task:
+    name: Dependencies list is up to date
+
+    container:
+      cpu: 1
+      memory: 512MB
+      dockerfile: docker/ubuntu_18.04-build-tools.dockerfile
+      docker_arguments:
+          cxx_package: g++-9
+          cc: gcc-9
+          cxx: g++-9
+
+    script:
+        - make depslist
+          # --exit-code forces git-diff to exit with code 1 if there were
+          # changes. If it does, we print a warning, and propagate the error.
+          # Otherwise this whole script exits with 0
+        - git diff --exit-code || (echo 'WARNING: the above diff is produced by GCC. Copy it if you only have Clang installed; otherwise just run `make depslist` and commit the result'; false)
