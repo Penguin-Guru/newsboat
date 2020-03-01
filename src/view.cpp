@@ -659,7 +659,7 @@ std::string View::select_tag()
 		return "";
 	}
 	std::shared_ptr<SelectFormAction> selecttag(
-		new SelectFormAction(this, selecttag_str, cfg));
+		new SelectFormAction(this, NULL, selecttag_str, NULL, cfg));
 	selecttag->set_type(SelectFormAction::SelectionType::TAG);
 	set_bindings(selecttag);
 	apply_colors(selecttag);
@@ -672,7 +672,7 @@ std::string View::select_tag()
 std::string View::select_filter(const std::vector<FilterNameExprPair>& filters)
 {
 	std::shared_ptr<SelectFormAction> selecttag(
-		new SelectFormAction(this, selecttag_str, cfg));
+		new SelectFormAction(this, NULL, selecttag_str, NULL, cfg));
 	selecttag->set_type(SelectFormAction::SelectionType::FILTER);
 	set_bindings(selecttag);
 	apply_colors(selecttag);

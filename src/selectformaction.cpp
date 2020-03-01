@@ -1,11 +1,13 @@
 #include "selectformaction.h"
 
 #include <cassert>
+#include <langinfo.h>
 #include <sstream>
 
 #include "config.h"
 #include "fmtstrformatter.h"
 #include "listformatter.h"
+#include "rssfeed.h"
 #include "strprintf.h"
 #include "utils.h"
 #include "view.h"
@@ -20,12 +22,20 @@ namespace newsboat {
  */
 
 SelectFormAction::SelectFormAction(View* vv,
+	Cache* cc,
 	std::string formstr,
+	FilterContainer* f,
 	ConfigContainer* cfg)
 	: FormAction(vv, formstr, cfg)
 	, quit(false)
+	, apply_filter(false)
+	, search_dummy_feed(new RssFeed(cc))
+	, filterpos(0)
+	, set_filterpos(false)
 	, type(SelectionType::TAG)
+	, filters2(f)
 {
+	search_dummy_feed->set_search_feed(true);
 }
 
 SelectFormAction::~SelectFormAction() {}
@@ -45,9 +55,76 @@ void SelectFormAction::handle_cmdline(const std::string& cmd)
 	}
 }
 
+void SelectFormAction::finished_qna(Operation op)	// Duplicate of "feedlistformaction.cpp".
+{
+	FormAction::finished_qna(op); // important!
+
+	switch (op) {
+	case OP_INT_END_SETFILTER:
+		op_end_setfilter();
+		break;
+	case OP_INT_START_SEARCH:
+		op_start_search();
+		break;
+	default:
+		break;
+	}
+}
+
+void SelectFormAction::op_end_setfilter()
+{
+	std::string filtertext = qna_responses[0];
+	filterhistory.add_line(filtertext);
+	if (filtertext.length() > 0) {
+		if (!m.parse(filtertext)) {
+			v->show_error(
+				_("Error: couldn't parse filter command!"));
+		} else {
+			save_filterpos();
+			apply_filter = true;
+			do_redraw = true;
+		}
+	}
+}
+
+void SelectFormAction::op_start_search()
+{
+	std::string searchphrase = qna_responses[0];
+	LOG(Level::DEBUG,
+		"FeedListFormAction::op_start_search: starting search for "
+		"`%s'",
+		searchphrase);
+	if (searchphrase.length() > 0) {
+		v->set_status(_("Searching..."));
+		searchhistory.add_line(searchphrase);
+		std::vector<std::shared_ptr<RssItem>> items;
+		try {
+			std::string utf8searchphrase = utils::convert_text(
+					searchphrase, "utf-8", nl_langinfo(CODESET));
+			items = v->get_ctrl()->search_for_items(
+					utf8searchphrase, nullptr);
+		} catch (const DbException& e) {
+			v->show_error(strprintf::fmt(
+					_("Error while searching for `%s': %s"),
+					searchphrase,
+					e.what()));
+			return;
+		}
+		if (!items.empty()) {
+			search_dummy_feed->item_mutex.lock();
+			search_dummy_feed->clear_items();
+			search_dummy_feed->add_items(items);
+			search_dummy_feed->item_mutex.unlock();
+			v->push_searchresult(search_dummy_feed, searchphrase);
+		} else {
+			v->show_error(_("No results."));
+		}
+	}
+}
+
 void SelectFormAction::process_operation(Operation op,
-	bool /* automatic */,
-	std::vector<std::string>* /* args */)
+	bool  automatic,
+	std::vector<std::string>* args)
 {
 	bool hardquit = false;
 	switch (op) {
@@ -83,7 +160,69 @@ void SelectFormAction::process_operation(Operation op,
 			}
 		}
 	}
-	break;
+	break;	// I assume this still applies to OP_OPEN, but not fixing indentation because I'm not sure. What's with those braces?
+	case OP_SEARCH:	// Duplicated from "feedlistformaction.cpp". Probably not optimal.
+		if (automatic && args->size() > 0) {
+			qna_responses.clear();
+			qna_responses.push_back((*args)[0]);
+			finished_qna(OP_INT_START_SEARCH);
+		} else {
+			std::vector<QnaPair> qna;
+			qna.push_back(QnaPair(_("Search for: "), ""));
+			this->start_qna(
+				qna, OP_INT_START_SEARCH, &searchhistory);
+		}
+		break;
+	case OP_SELECTFILTER:
+		if (filters2->size() > 0) {
+			std::string newfilter;
+			if (automatic && args->size() > 0) {
+				newfilter = (*args)[0];
+			} else {
+				newfilter = v->select_filter(
+						filters2->get_filters());
+			}
+			if (newfilter != "") {
+				filterhistory.add_line(newfilter);
+				if (newfilter.length() > 0) {
+					if (!m.parse(newfilter)) {
+						v->show_error(strprintf::fmt(
+								_("Error: couldn't "
+									"parse filter "
+									"command `%s': %s"),
+								newfilter,
+								m.get_parse_error()));
+					} else {
+						save_filterpos();
+						apply_filter = true;
+						do_redraw = true;
+					}
+				}
+			}
+		} else {
+			v->show_error(_("No filters defined."));
+		}
+		break;
+	case OP_CLEARFILTER:
+		apply_filter = false;
+		do_redraw = true;
+		save_filterpos();
+		break;
+	case OP_SETFILTER:
+		if (automatic && args->size() > 0) {
+			qna_responses.clear();
+			qna_responses.push_back((*args)[0]);
+			finished_qna(OP_INT_END_SETFILTER);
+		} else {
+			std::vector<QnaPair> qna;
+			qna.push_back(QnaPair(_("Filter: "), ""));
+			this->start_qna(
+				qna, OP_INT_END_SETFILTER, &filterhistory);
+		}
+		break;
+	case OP_HELP:
+		v->push_help();
+		break;
 	default:
 		break;
 	}
@@ -92,7 +231,7 @@ void SelectFormAction::process_operation(Operation op,
 		while (v->formaction_stack_size() > 0) {
 			v->pop_current_formaction();
 		}
-	} else if (quit) {
+	} else if (quit) {	// Is this behaviour supposed to differ from feedlistformaction.cpp?
 		v->pop_current_formaction();
 	}
 }
@@ -195,10 +334,12 @@ KeyMapHintEntry* SelectFormAction::get_keymap_hint()
 {
 	static KeyMapHintEntry hints_tag[] = {{OP_QUIT, _("Cancel")},
 		{OP_OPEN, _("Select Tag")},
+		{OP_HELP, _("Help")},
 		{OP_NIL, nullptr}
 	};
 	static KeyMapHintEntry hints_filter[] = {{OP_QUIT, _("Cancel")},
 		{OP_OPEN, _("Select Filter")},
+		{OP_HELP, _("Help")},
 		{OP_NIL, nullptr}
 	};
 	switch (type) {
@@ -208,6 +349,15 @@ KeyMapHintEntry* SelectFormAction::get_keymap_hint()
 		return hints_filter;
 	}
 	return nullptr;
+}
+
+void SelectFormAction::save_filterpos()	// Duplicated from "feedlistformaction.cpp"...
+{
+	unsigned int i = utils::to_u(f->get("feedpos"));
+	if (i < visible_feeds.size()) {
+		filterpos = visible_feeds[i].second;
+		set_filterpos = true;
+	}
 }
 
 std::string SelectFormAction::title()

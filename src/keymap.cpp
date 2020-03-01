@@ -140,7 +140,7 @@ static OpDesc opdescs[] = {
 		"help",
 		"?",
 		_("Open help dialog"),
-		KM_FEEDLIST | KM_ARTICLELIST | KM_ARTICLE | KM_PODBOAT
+		KM_FEEDLIST | KM_ARTICLELIST | KM_ARTICLE | KM_PODBOAT | KM_TAGSELECT
 	},
 	{
 		OP_TOGGLESOURCEVIEW,
@@ -178,7 +178,7 @@ static OpDesc opdescs[] = {
 		"open-search",
 		"/",
 		_("Open search dialog"),
-		KM_FEEDLIST | KM_HELP | KM_ARTICLELIST | KM_ARTICLE
+		KM_FEEDLIST | KM_HELP | KM_ARTICLELIST | KM_ARTICLE | KM_TAGSELECT
 	},
 	{OP_GOTO_URL, "goto-url", "#", _("Goto URL #"), KM_ARTICLE},
 	{OP_ENQUEUE, "enqueue", "e", _("Add download to queue"), KM_ARTICLE},
@@ -247,21 +247,21 @@ static OpDesc opdescs[] = {
 		"set-filter",
 		"F",
 		_("Set a filter"),
-		KM_FEEDLIST | KM_ARTICLELIST
+		KM_FEEDLIST | KM_ARTICLELIST | KM_TAGSELECT
 	},
 	{
 		OP_SELECTFILTER,
 		"select-filter",
 		"f",
 		_("Select a predefined filter"),
-		KM_FEEDLIST | KM_ARTICLELIST
+		KM_FEEDLIST | KM_ARTICLELIST | KM_TAGSELECT
 	},
 	{
 		OP_CLEARFILTER,
 		"clear-filter",
 		"^F",
 		_("Clear currently set filter"),
-		KM_FEEDLIST | KM_HELP | KM_ARTICLELIST
+		KM_FEEDLIST | KM_HELP | KM_ARTICLELIST | KM_TAGSELECT
 	},
 	{
 		OP_BOOKMARK,
@@ -607,6 +607,7 @@ Operation KeyMap::get_opcode(const std::string& opstr)
 			return opdescs[i].op;
 		}
 	}
+	//LOG(Level::DEBUG, "KeyMap::get_opcode failed. opstr = %s", opstr);
 	return OP_NIL;
 }
 
