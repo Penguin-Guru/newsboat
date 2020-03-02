@@ -433,7 +433,8 @@ REDO:
 				newfilter = (*args)[0];
 			} else {
 				newfilter = v->select_filter(
-						filters->get_filters());
+						//filters->get_filters());
+						filters);
 			}
 			if (newfilter != "") {
 				filterhistory.add_line(newfilter);

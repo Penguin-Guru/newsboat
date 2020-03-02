@@ -85,6 +85,9 @@ private:
 		unsigned int width);
 
 	FilterContainer* filters2;	// Naming should be sorted out.
+
+	//bool tag_is_relevant(const std::vector<std::string>& tag);
+	bool tag_is_relevant(const std::string tag);
 };
 
 } // namespace newsboat

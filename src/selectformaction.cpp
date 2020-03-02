@@ -180,7 +180,8 @@ void SelectFormAction::process_operation(Operation op,
 				newfilter = (*args)[0];
 			} else {
 				newfilter = v->select_filter(
-						filters2->get_filters());
+						//filters2->get_filters());
+						filters2);
 			}
 			if (newfilter != "") {
 				filterhistory.add_line(newfilter);
@@ -236,6 +237,21 @@ void SelectFormAction::process_operation(Operation op,
 	}
 }
 
+bool SelectFormAction::tag_is_relevant(
+	//const std::vector<std::string> tag
+	const std::string tag
+) {
+	bool show_read = cfg->get_configvalue_as_bool("show-read-feeds");
+	for (const auto& feed : tag) {
+		if (
+			(show_read || feed->unread_item_count() > 0) &&
+			(!apply_filter || m.matches(feed.get())) &&
+			!feed->hidden()
+		) return true;
+	}
+	return false;
+}
+
 void SelectFormAction::prepare()
 {
 	if (do_redraw) {
@@ -247,6 +263,7 @@ void SelectFormAction::prepare()
 		switch (type) {
 		case SelectionType::TAG:
 			for (const auto& tag : tags) {
+				if (!tag_is_relevant(tag)) continue;
 				listfmt.add_line(format_line(selecttag_format,
 						tag,
 						i + 1,

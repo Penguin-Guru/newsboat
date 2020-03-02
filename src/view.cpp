@@ -660,7 +660,7 @@ std::string View::select_tag()
 	}
 	if (!rsscache) LOG(Level::ERROR, "View::select_tag: invalid rsscache.");
 	std::shared_ptr<SelectFormAction> selecttag(
-		new SelectFormAction(this, rsscache, selecttag_str, NULL, cfg));
+		new SelectFormAction(this, rsscache, selecttag_str, filters, cfg));
 	selecttag->set_type(SelectFormAction::SelectionType::TAG);
 	set_bindings(selecttag);
 	apply_colors(selecttag);
@@ -670,16 +670,18 @@ std::string View::select_tag()
 	return selecttag->get_selected_value();
 }
 
-std::string View::select_filter(const std::vector<FilterNameExprPair>& filters)
+//std::string View::select_filter(const std::vector<FilterNameExprPair>& filters)
+std::string View::select_filter(FilterContainer* filters2)
 {
 	if (!rsscache) LOG(Level::ERROR, "View::select_tag: invalid rsscache.");
+	filters = filters2;
 	std::shared_ptr<SelectFormAction> selecttag(
-		new SelectFormAction(this, rsscache, selecttag_str, NULL, cfg));
+		new SelectFormAction(this, rsscache, selecttag_str, filters, cfg));
 	selecttag->set_type(SelectFormAction::SelectionType::FILTER);
 	set_bindings(selecttag);
 	apply_colors(selecttag);
 	selecttag->set_parent_formaction(get_current_formaction());
-	selecttag->set_filters(filters);
+	//selecttag->set_filters(filters);
 	run_modal(selecttag, "");
 	return selecttag->get_selected_value();
 }

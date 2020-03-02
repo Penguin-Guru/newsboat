@@ -620,7 +620,8 @@ void ItemListFormAction::process_operation(Operation op,
 				}
 			} else {
 				newfilter = v->select_filter(
-						filters->get_filters());
+						//filters->get_filters());
+						filters);
 				LOG(Level::DEBUG,
 					"ItemListFormAction::run: newfilters "
 					"= %s",

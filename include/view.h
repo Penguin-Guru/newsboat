@@ -76,7 +76,8 @@ public:
 	std::string run_dirbrowser(const std::string& dir = "");
 	std::string select_tag();
 	std::string select_filter(
-		const std::vector<FilterNameExprPair>& filters);
+		//const std::vector<FilterNameExprPair>& filters);
+		FilterContainer* filters2);
 
 	int open_in_browser(const std::string& url);
 	void open_in_pager(const std::string& filename);
