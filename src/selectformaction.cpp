@@ -123,7 +123,7 @@ void SelectFormAction::op_start_search()
 }
 
 void SelectFormAction::process_operation(Operation op,
-	bool  automatic,
+	bool automatic,
 	std::vector<std::string>* args)
 {
 	bool hardquit = false;

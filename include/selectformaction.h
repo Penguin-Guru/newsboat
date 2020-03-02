@@ -6,6 +6,7 @@
 #include "matcher.h"
 #include "dbexception.h"
 #include "cache.h"
+#include "controller.h"
 
 namespace newsboat {
 
