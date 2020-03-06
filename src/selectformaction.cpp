@@ -238,17 +238,20 @@ void SelectFormAction::process_operation(Operation op,
 }
 
 bool SelectFormAction::tag_is_relevant(
-	//const std::vector<std::string> tag
-	const std::string tag
+	const std::string& tag
 ) {
+	std::vector<std::shared_ptr<RssFeed>> feeds = v->get_ctrl()->get_feedcontainer()->get_all_feeds();
 	bool show_read = cfg->get_configvalue_as_bool("show-read-feeds");
-	for (const auto& feed : tag) {
-		if (
-			(show_read || feed->unread_item_count() > 0) &&
-			(!apply_filter || m.matches(feed.get())) &&
-			!feed->hidden()
-		) return true;
+	for (const auto& feed : feeds) {
+		if (feed.get()->matches_tag(tag)) {
+			if (
+				(show_read || feed->unread_item_count() > 0) &&
+				(!apply_filter || m.matches(feed.get())) &&
+				!feed->hidden()
+			) return true;
+		}
 	}
+	LOG(Level::DEBUG, "Tag is not relevant: %s ", tag);
 	return false;
 }
 
