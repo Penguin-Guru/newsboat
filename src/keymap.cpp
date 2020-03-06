@@ -607,7 +607,7 @@ Operation KeyMap::get_opcode(const std::string& opstr)
 			return opdescs[i].op;
 		}
 	}
-	//LOG(Level::DEBUG, "KeyMap::get_opcode failed. opstr = %s", opstr);
+
 	return OP_NIL;
 }
 

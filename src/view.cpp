@@ -670,7 +670,6 @@ std::string View::select_tag()
 	return selecttag->get_selected_value();
 }
 
-//std::string View::select_filter(const std::vector<FilterNameExprPair>& filters)
 std::string View::select_filter(FilterContainer* filters2)
 {
 	if (!rsscache) LOG(Level::ERROR, "View::select_tag: invalid rsscache.");
@@ -681,7 +680,6 @@ std::string View::select_filter(FilterContainer* filters2)
 	set_bindings(selecttag);
 	apply_colors(selecttag);
 	selecttag->set_parent_formaction(get_current_formaction());
-	//selecttag->set_filters(filters);
 	run_modal(selecttag, "");
 	return selecttag->get_selected_value();
 }
